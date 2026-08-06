@@ -17,3 +17,6 @@ jwt:
   secret: ${JWT_SECRET:dev-only-secret-key-change-in-production-please-32bytes-min}
   access-token-expire-ms: 3600000
   refresh-token-expire-ms: 1209600000
+
+app:
+  frontend-url: ${FRONTEND_URL:http://localhost:3000}
