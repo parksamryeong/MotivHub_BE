@@ -15,8 +15,12 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
+    public static final String AUTH_ERROR_CODE_ATTR = "authErrorCode";
+    public static final String TOKEN_EXPIRED = "TOKEN_EXPIRED";
+
     private static final String HEADER = "Authorization";
     private static final String PREFIX = "Bearer ";
+    private static final String TOKEN_TYPE_ACCESS = "access";
 
     private final JwtProvider jwtProvider;
 
@@ -30,13 +34,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String header = request.getHeader(HEADER);
         if (header != null && header.startsWith(PREFIX)) {
             String token = header.substring(PREFIX.length());
-            if (jwtProvider.isValid(token)) {
+            if (jwtProvider.isValid(token) && TOKEN_TYPE_ACCESS.equals(jwtProvider.getTokenType(token))) {
                 Long userId = jwtProvider.getUserId(token);
                 var authentication = new UsernamePasswordAuthenticationToken(
                         userId, null, List.of(new SimpleGrantedAuthority("ROLE_USER")));
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             } else {
-                request.setAttribute("authErrorCode", "TOKEN_EXPIRED");
+                request.setAttribute(AUTH_ERROR_CODE_ATTR, TOKEN_EXPIRED);
             }
         }
         filterChain.doFilter(request, response);

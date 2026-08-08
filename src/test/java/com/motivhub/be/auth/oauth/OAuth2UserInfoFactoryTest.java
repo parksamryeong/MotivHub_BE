@@ -70,6 +70,18 @@ class OAuth2UserInfoFactoryTest {
     }
 
     @Test
+    void githubEmailIsNullWhenNotPublic() {
+        Map<String, Object> attrs = new java.util.HashMap<>();
+        attrs.put("id", 456);
+        attrs.put("email", null);
+        attrs.put("avatar_url", "http://img/gh.png");
+
+        OAuth2UserInfo info = OAuth2UserInfoFactory.of("github", attrs);
+
+        assertThat(info.getEmail()).isNull();
+    }
+
+    @Test
     void throwsExceptionForUnsupportedProvider() {
         org.assertj.core.api.Assertions.assertThatThrownBy(
                         () -> OAuth2UserInfoFactory.of("facebook", Map.of()))

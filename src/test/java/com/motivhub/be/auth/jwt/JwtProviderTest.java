@@ -36,6 +36,28 @@ class JwtProviderTest {
     }
 
     @Test
+    void accessTokenHasAccessType() {
+        String token = jwtProvider.generateAccessToken(42L);
+
+        assertThat(jwtProvider.getTokenType(token)).isEqualTo("access");
+    }
+
+    @Test
+    void refreshTokenHasRefreshType() {
+        String token = jwtProvider.generateRefreshToken(7L);
+
+        assertThat(jwtProvider.getTokenType(token)).isEqualTo("refresh");
+    }
+
+    @Test
+    void throwsExceptionWhenExtractingTokenTypeFromTamperedToken() {
+        String token = jwtProvider.generateAccessToken(1L) + "tampered";
+
+        assertThatThrownBy(() -> jwtProvider.getTokenType(token))
+                .isInstanceOf(InvalidTokenException.class);
+    }
+
+    @Test
     void tamperedTokenIsInvalid() {
         String token = jwtProvider.generateAccessToken(1L) + "tampered";
 

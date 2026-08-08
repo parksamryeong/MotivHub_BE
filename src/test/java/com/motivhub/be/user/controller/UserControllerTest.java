@@ -64,13 +64,13 @@ class UserControllerTest extends AbstractIntegrationTest {
 
     @Test
     void returnsAvailableFalseForExistingNickname() throws Exception {
-        userRepository.save(User.create(SocialProvider.GITHUB, "p3", null, "taken_nick", null));
+        userRepository.save(User.create(SocialProvider.GITHUB, "p3", null, "takennick", null));
         User user = userRepository.save(
                 User.create(SocialProvider.GITHUB, "p10", "h@test.com", "user_p10nick", null));
 
         mockMvc.perform(get("/api/users/nickname-check")
                         .header("Authorization", "Bearer " + tokenFor(user))
-                        .param("nickname", "taken_nick"))
+                        .param("nickname", "takennick"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.available").value(false));
     }
@@ -91,14 +91,14 @@ class UserControllerTest extends AbstractIntegrationTest {
 
     @Test
     void returns409WhenUpdatingToDuplicateNickname() throws Exception {
-        userRepository.save(User.create(SocialProvider.GITHUB, "p5", null, "already_used", null));
+        userRepository.save(User.create(SocialProvider.GITHUB, "p5", null, "alreadyused", null));
         User user = userRepository.save(
                 User.create(SocialProvider.GITHUB, "p6", "d@test.com", "user_p6nick", null));
 
         mockMvc.perform(patch("/api/users/me/nickname")
                         .header("Authorization", "Bearer " + tokenFor(user))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new NicknameUpdateRequest("already_used"))))
+                        .content(objectMapper.writeValueAsString(new NicknameUpdateRequest("alreadyused"))))
                 .andExpect(status().isConflict());
     }
 

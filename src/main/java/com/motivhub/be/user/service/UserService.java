@@ -1,6 +1,8 @@
 package com.motivhub.be.user.service;
 
+import com.motivhub.be.auth.service.RefreshTokenService;
 import com.motivhub.be.user.domain.User;
+import com.motivhub.be.user.domain.UserStatus;
 import com.motivhub.be.user.dto.MyPageResponse;
 import com.motivhub.be.user.dto.UserProfileResponse;
 import com.motivhub.be.user.exception.InvalidNicknameException;
@@ -16,10 +18,13 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final NicknameValidator nicknameValidator;
+    private final RefreshTokenService refreshTokenService;
 
-    public UserService(UserRepository userRepository, NicknameValidator nicknameValidator) {
+    public UserService(UserRepository userRepository, NicknameValidator nicknameValidator,
+                        RefreshTokenService refreshTokenService) {
         this.userRepository = userRepository;
         this.nicknameValidator = nicknameValidator;
+        this.refreshTokenService = refreshTokenService;
     }
 
     public UserProfileResponse getProfile(Long userId) {
@@ -49,11 +54,18 @@ public class UserService {
 
     @Transactional
     public void withdraw(Long userId) {
-        getUser(userId).withdraw();
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException("유저를 찾을 수 없습니다."));
+        user.withdraw();
+        refreshTokenService.delete(userId);
     }
 
     private User getUser(Long userId) {
-        return userRepository.findById(userId)
+        User user = userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException("유저를 찾을 수 없습니다."));
+        if (user.getStatus() == UserStatus.WITHDRAWN) {
+            throw new UserNotFoundException("유저를 찾을 수 없습니다.");
+        }
+        return user;
     }
 }

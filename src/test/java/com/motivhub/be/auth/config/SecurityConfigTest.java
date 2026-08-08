@@ -23,9 +23,9 @@ class SecurityConfigTest extends AbstractIntegrationTest {
 
     @Test
     void exchangeEndpointPassesSecurityFilterWithoutAuth() throws Exception {
-        // 컨트롤러가 아직 없어 404가 나지만, 401(인증필요)이 아니라는 점으로
-        // permitAll 설정이 적용됐는지 검증한다.
+        // /api/auth/exchange는 POST 전용 컨트롤러가 있어 GET은 405가 나지만,
+        // 401(인증필요)이 아니라는 점으로 permitAll 설정이 적용됐는지 검증한다.
         mockMvc.perform(get("/api/auth/exchange"))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isMethodNotAllowed());
     }
 }

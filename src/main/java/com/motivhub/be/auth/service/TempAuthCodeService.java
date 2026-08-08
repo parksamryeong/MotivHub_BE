@@ -31,11 +31,10 @@ public class TempAuthCodeService {
 
     public Optional<TokenPair> consume(String code) {
         String key = KEY_PREFIX + code;
-        String value = redisTemplate.opsForValue().get(key);
+        String value = redisTemplate.opsForValue().getAndDelete(key);
         if (value == null) {
             return Optional.empty();
         }
-        redisTemplate.delete(key);
         return Optional.of(readJson(value));
     }
 

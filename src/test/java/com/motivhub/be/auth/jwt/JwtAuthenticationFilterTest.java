@@ -31,11 +31,28 @@ class JwtAuthenticationFilterTest {
         request.addHeader("Authorization", "Bearer valid-token");
         MockHttpServletResponse response = new MockHttpServletResponse();
         when(jwtProvider.isValid("valid-token")).thenReturn(true);
+        when(jwtProvider.getTokenType("valid-token")).thenReturn("access");
         when(jwtProvider.getUserId("valid-token")).thenReturn(99L);
 
         filter.doFilter(request, response, filterChain);
 
         assertThat(SecurityContextHolder.getContext().getAuthentication().getPrincipal()).isEqualTo(99L);
+    }
+
+    @Test
+    void doesNotSetAuthenticationAndMarksAuthErrorCodeWhenTokenTypeIsNotAccess() throws Exception {
+        JwtAuthenticationFilter filter = new JwtAuthenticationFilter(jwtProvider);
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("Authorization", "Bearer refresh-token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        when(jwtProvider.isValid("refresh-token")).thenReturn(true);
+        when(jwtProvider.getTokenType("refresh-token")).thenReturn("refresh");
+
+        filter.doFilter(request, response, filterChain);
+
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+        assertThat(request.getAttribute(JwtAuthenticationFilter.AUTH_ERROR_CODE_ATTR))
+                .isEqualTo(JwtAuthenticationFilter.TOKEN_EXPIRED);
     }
 
     @Test
@@ -60,6 +77,7 @@ class JwtAuthenticationFilterTest {
         filter.doFilter(request, response, filterChain);
 
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
-        assertThat(request.getAttribute("authErrorCode")).isEqualTo("TOKEN_EXPIRED");
+        assertThat(request.getAttribute(JwtAuthenticationFilter.AUTH_ERROR_CODE_ATTR))
+                .isEqualTo(JwtAuthenticationFilter.TOKEN_EXPIRED);
     }
 }

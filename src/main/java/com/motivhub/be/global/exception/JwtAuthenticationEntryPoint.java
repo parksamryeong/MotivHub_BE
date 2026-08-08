@@ -1,6 +1,7 @@
 package com.motivhub.be.global.exception;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.motivhub.be.auth.jwt.JwtAuthenticationFilter;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
@@ -21,9 +22,9 @@ public class JwtAuthenticationEntryPoint implements AuthenticationEntryPoint {
     @Override
     public void commence(HttpServletRequest request, HttpServletResponse response,
                           AuthenticationException authException) throws IOException {
-        Object errorCode = request.getAttribute("authErrorCode");
+        Object errorCode = request.getAttribute(JwtAuthenticationFilter.AUTH_ERROR_CODE_ATTR);
         String code = errorCode != null ? errorCode.toString() : "UNAUTHORIZED";
-        String message = "TOKEN_EXPIRED".equals(code) ? "토큰이 만료되었습니다." : "인증이 필요합니다.";
+        String message = JwtAuthenticationFilter.TOKEN_EXPIRED.equals(code) ? "토큰이 만료되었습니다." : "인증이 필요합니다.";
 
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
