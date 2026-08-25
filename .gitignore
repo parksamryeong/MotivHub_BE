@@ -39,3 +39,4 @@ out/
 ### Superpowers (subagent-driven-development scratch workspace) ###
 .superpowers/
 docs/superpowers/
+.worktrees/
