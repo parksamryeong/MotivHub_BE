@@ -36,6 +36,9 @@ out/
 ### VS Code ###
 .vscode/
 
+### Load test ###
+load-test/results/
+
 ### Superpowers (subagent-driven-development scratch workspace) ###
 .superpowers/
 docs/superpowers/
