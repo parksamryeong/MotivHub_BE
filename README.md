@@ -34,3 +34,14 @@ MySQL, Redis, Prometheus, Grafana가 함께 기동됩니다. 기동 후 서비�
 `localhost:8080`에서 앱이 실행됩니다.
 
 > `/actuator/health`, `/actuator/prometheus`는 로컬 개발 편의를 위해 인증 없이 노출되어 있습니다. 실제 배포 환경에는 그대로 가져가면 안 됩니다.
+
+### 부하테스트 (k6)
+
+```bash
+docker compose up -d mysql redis
+docker compose exec -T mysql mysql -uroot -proot motivhub < load-test/seed-users.sql
+JWT_SECRET=k6loadtestdevsecretexactly32byte ./gradlew bootRun
+k6 run -e JWT_SECRET=k6loadtestdevsecretexactly32byte load-test/protected-api-load-test.js
+```
+
+부하를 주는 동안 `http://localhost:13000`의 Grafana 대시보드에서 TPS/p95/JVM 힙/HikariCP 커넥션 변화를 관찰할 수 있다.
