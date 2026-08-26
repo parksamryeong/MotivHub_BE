@@ -15,13 +15,13 @@ public abstract class AbstractIntegrationTest {
     // 싱글턴 컨테이너 패턴: @Container를 붙이지 않아야 JUnit5가 테스트 클래스마다
     // 자동으로 stop시키지 않는다. 여러 클래스가 이 static 필드를 공유해야 하므로,
     // JVM 전체에서 단 한 번만 시작되고 절대 재시작되지 않아야 한다.
-    static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0")
+    static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.4")
             .withDatabaseName("motivhub")
             .withUsername("test")
             .withPassword("test");
 
     static final GenericContainer<?> REDIS = new GenericContainer<>(
-            DockerImageName.parse("redis:7-alpine"))
+            DockerImageName.parse("redis:7.4-alpine"))
             .withExposedPorts(6379);
 
     static {
