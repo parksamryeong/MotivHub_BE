@@ -12,6 +12,9 @@ import com.motivhub.be.auth.jwt.JwtProvider;
 import com.motivhub.be.auth.service.RefreshTokenService;
 import com.motivhub.be.auth.service.TempAuthCodeService;
 import com.motivhub.be.support.AbstractIntegrationTest;
+import com.motivhub.be.user.domain.SocialProvider;
+import com.motivhub.be.user.domain.User;
+import com.motivhub.be.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -26,6 +29,7 @@ class AuthControllerTest extends AbstractIntegrationTest {
     @Autowired private TempAuthCodeService tempAuthCodeService;
     @Autowired private RefreshTokenService refreshTokenService;
     @Autowired private JwtProvider jwtProvider;
+    @Autowired private UserRepository userRepository;
 
     @Test
     void exchangesTokenWithValidCode() throws Exception {
@@ -47,8 +51,10 @@ class AuthControllerTest extends AbstractIntegrationTest {
 
     @Test
     void reissuesTokenWithValidRefreshToken() throws Exception {
-        String refreshToken = jwtProvider.generateRefreshToken(55L);
-        refreshTokenService.save(55L, refreshToken);
+        User user = userRepository.save(
+                User.create(SocialProvider.GITHUB, "refresh-test-1", "refresh@test.com", "user_refresh1", null));
+        String refreshToken = jwtProvider.generateRefreshToken(user.getId());
+        refreshTokenService.save(user.getId(), refreshToken);
 
         mockMvc.perform(post("/api/auth/refresh")
                         .contentType(MediaType.APPLICATION_JSON)
