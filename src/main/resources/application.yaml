@@ -2,7 +2,7 @@ spring:
   application:
     name: motivhub-be
   datasource:
-    url: jdbc:mysql://localhost:3306/motivhub?serverTimezone=UTC&characterEncoding=UTF-8
+    url: jdbc:mysql://localhost:13306/motivhub?serverTimezone=UTC&characterEncoding=UTF-8
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:root}
   jpa:
