@@ -38,10 +38,12 @@ MySQL, Redis, Prometheus, Grafana가 함께 기동됩니다. 기동 후 서비�
 ### 부하테스트 (k6)
 
 ```bash
-docker compose up -d mysql redis
+docker compose up -d
 docker compose exec -T mysql mysql -uroot -proot motivhub < load-test/seed-users.sql
 JWT_SECRET=k6loadtestdevsecretexactly32byte ./gradlew bootRun
 k6 run -e JWT_SECRET=k6loadtestdevsecretexactly32byte load-test/protected-api-load-test.js
 ```
+
+> 위 "로컬 실행"의 `JWT_SECRET`은 32자 이상이면 되지만, 부하테스트에서는 반드시 이 값을 정확히 그대로 사용해야 한다. `Keys.hmacShaKeyFor()`가 시크릿 바이트 길이로 서명 알고리즘(HS256/384/512)을 정하기 때문에, k6와 앱이 다른 값을 쓰면 토큰이 401로 거부된다.
 
 부하를 주는 동안 `http://localhost:13000`의 Grafana 대시보드에서 TPS/p95/JVM 힙/HikariCP 커넥션 변화를 관찰할 수 있다.

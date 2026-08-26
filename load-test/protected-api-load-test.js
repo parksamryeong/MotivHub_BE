@@ -4,6 +4,11 @@ import encoding from 'k6/encoding';
 import { check, sleep } from 'k6';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
+// The app's JwtProvider calls Keys.hmacShaKeyFor(secret.getBytes()), which picks the
+// signing algorithm from the secret's byte length: 32-47 bytes -> HS256, 48-63 -> HS384,
+// 64+ -> HS512. This value is exactly 32 bytes, so it signs as HS256 here. It must match
+// the app's JWT_SECRET byte-for-byte (both value and length) — used via `bootRun` — or
+// token verification fails with 401.
 const JWT_SECRET = __ENV.JWT_SECRET || 'k6loadtestdevsecretexactly32byte';
 const USER_IDS = [90001, 90002, 90003, 90004, 90005, 90006, 90007, 90008, 90009, 90010];
 
