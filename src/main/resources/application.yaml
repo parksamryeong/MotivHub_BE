@@ -57,3 +57,14 @@ jwt:
 
 app:
   frontend-url: ${FRONTEND_URL:http://localhost:3000}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, prometheus
+  metrics:
+    tags:
+      application: motivhub-be
+  # 로컬 전용 설정: /actuator/health, /actuator/prometheus를 인증 없이 노출한다.
+  # 실제 배포 환경에서는 네트워크 격리 또는 actuator 자체 인증을 반드시 추가해야 한다.

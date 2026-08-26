@@ -23,7 +23,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 public class SecurityConfig {
 
     private static final String[] PUBLIC_ENDPOINTS = {
-            "/oauth2/**", "/login/**", "/api/auth/exchange", "/api/auth/refresh"
+            "/oauth2/**", "/login/**", "/api/auth/exchange", "/api/auth/refresh", "/actuator/**"
     };
 
     private final String frontendUrl;
