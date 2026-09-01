@@ -53,8 +53,8 @@ class AuthControllerTest extends AbstractIntegrationTest {
     void reissuesTokenWithValidRefreshToken() throws Exception {
         User user = userRepository.save(
                 User.create(SocialProvider.GITHUB, "refresh-test-1", "refresh@test.com", "user_refresh1", null));
-        String refreshToken = jwtProvider.generateRefreshToken(user.getId());
-        refreshTokenService.save(user.getId(), refreshToken);
+        String refreshToken = jwtProvider.generateRefreshToken(user.getId(), "device-1");
+        refreshTokenService.save(user.getId(), "device-1", refreshToken);
 
         mockMvc.perform(post("/api/auth/refresh")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -64,7 +64,7 @@ class AuthControllerTest extends AbstractIntegrationTest {
 
     @Test
     void returns401ForRefreshTokenNotInRedis() throws Exception {
-        String refreshToken = jwtProvider.generateRefreshToken(56L);
+        String refreshToken = jwtProvider.generateRefreshToken(56L, "device-1");
 
         mockMvc.perform(post("/api/auth/refresh")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -73,15 +73,82 @@ class AuthControllerTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void secondDeviceLoginDoesNotInvalidateFirstDevicesRefreshToken() throws Exception {
+        User user = userRepository.save(
+                User.create(SocialProvider.GITHUB, "multi-device-1", "multi@test.com", "user_multi1", null));
+        String refreshTokenDeviceA = jwtProvider.generateRefreshToken(user.getId(), "device-A");
+        String refreshTokenDeviceB = jwtProvider.generateRefreshToken(user.getId(), "device-B");
+        refreshTokenService.save(user.getId(), "device-A", refreshTokenDeviceA);
+        refreshTokenService.save(user.getId(), "device-B", refreshTokenDeviceB);
+
+        mockMvc.perform(post("/api/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new RefreshRequest(refreshTokenDeviceA))))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void deletesRefreshTokenWhenAuthenticatedUserLogsOut() throws Exception {
         Long userId = 57L;
+        String deviceId = "device-1";
         String accessToken = jwtProvider.generateAccessToken(userId);
-        refreshTokenService.save(userId, "some-refresh");
+        String refreshToken = jwtProvider.generateRefreshToken(userId, deviceId);
+        refreshTokenService.save(userId, deviceId, refreshToken);
 
         mockMvc.perform(post("/api/auth/logout")
-                        .header("Authorization", "Bearer " + accessToken))
+                        .header("Authorization", "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new RefreshRequest(refreshToken))))
                 .andExpect(status().isNoContent());
 
-        assertThat(refreshTokenService.find(userId)).isEmpty();
+        assertThat(refreshTokenService.find(userId, deviceId)).isEmpty();
+    }
+
+    @Test
+    void logoutOnOneDeviceDoesNotAffectAnotherDevice() throws Exception {
+        Long userId = 58L;
+        String accessTokenDeviceA = jwtProvider.generateAccessToken(userId);
+        String refreshTokenDeviceA = jwtProvider.generateRefreshToken(userId, "device-A");
+        String refreshTokenDeviceB = jwtProvider.generateRefreshToken(userId, "device-B");
+        refreshTokenService.save(userId, "device-A", refreshTokenDeviceA);
+        refreshTokenService.save(userId, "device-B", refreshTokenDeviceB);
+
+        mockMvc.perform(post("/api/auth/logout")
+                        .header("Authorization", "Bearer " + accessTokenDeviceA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new RefreshRequest(refreshTokenDeviceA))))
+                .andExpect(status().isNoContent());
+
+        assertThat(refreshTokenService.find(userId, "device-A")).isEmpty();
+        assertThat(refreshTokenService.find(userId, "device-B")).contains(refreshTokenDeviceB);
+    }
+
+    @Test
+    void returns403WhenLogoutRefreshTokenBelongsToDifferentUser() throws Exception {
+        Long authenticatedUserId = 59L;
+        Long otherUserId = 60L;
+        String accessToken = jwtProvider.generateAccessToken(authenticatedUserId);
+        String otherUsersRefreshToken = jwtProvider.generateRefreshToken(otherUserId, "device-A");
+        refreshTokenService.save(otherUserId, "device-A", otherUsersRefreshToken);
+
+        mockMvc.perform(post("/api/auth/logout")
+                        .header("Authorization", "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new RefreshRequest(otherUsersRefreshToken))))
+                .andExpect(status().isForbidden());
+
+        assertThat(refreshTokenService.find(otherUserId, "device-A")).contains(otherUsersRefreshToken);
+    }
+
+    @Test
+    void logoutWithInvalidRefreshTokenStillReturns204() throws Exception {
+        Long userId = 61L;
+        String accessToken = jwtProvider.generateAccessToken(userId);
+
+        mockMvc.perform(post("/api/auth/logout")
+                        .header("Authorization", "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new RefreshRequest("garbage-token"))))
+                .andExpect(status().isNoContent());
     }
 }

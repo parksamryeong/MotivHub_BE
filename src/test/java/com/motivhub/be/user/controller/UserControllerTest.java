@@ -25,6 +25,7 @@ class UserControllerTest extends AbstractIntegrationTest {
     @Autowired private ObjectMapper objectMapper;
     @Autowired private UserRepository userRepository;
     @Autowired private JwtProvider jwtProvider;
+    @Autowired private com.motivhub.be.auth.service.RefreshTokenService refreshTokenService;
 
     private String tokenFor(User user) {
         return jwtProvider.generateAccessToken(user.getId());
@@ -125,5 +126,19 @@ class UserControllerTest extends AbstractIntegrationTest {
         User withdrawn = userRepository.findById(user.getId()).orElseThrow();
         assertThat(withdrawn.getStatus()).isEqualTo(UserStatus.WITHDRAWN);
         assertThat(withdrawn.getEmail()).isNull();
+    }
+
+    @Test
+    void withdrawalClearsRefreshTokensOnEveryDevice() throws Exception {
+        User user = userRepository.save(
+                User.create(SocialProvider.GITHUB, "p11", "withdraw@test.com", "user_p11nick", null));
+        refreshTokenService.save(user.getId(), "device-A", "token-a");
+        refreshTokenService.save(user.getId(), "device-B", "token-b");
+
+        mockMvc.perform(delete("/api/users/me").header("Authorization", "Bearer " + tokenFor(user)))
+                .andExpect(status().isNoContent());
+
+        assertThat(refreshTokenService.find(user.getId(), "device-A")).isEmpty();
+        assertThat(refreshTokenService.find(user.getId(), "device-B")).isEmpty();
     }
 }

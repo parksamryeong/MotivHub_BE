@@ -22,22 +22,6 @@ public class RefreshTokenService {
         this.refreshTokenExpireMs = refreshTokenExpireMs;
     }
 
-    @Deprecated
-    public void save(Long userId, String refreshToken) {
-        redisTemplate.opsForValue().set(
-                KEY_PREFIX + userId, refreshToken, Duration.ofMillis(refreshTokenExpireMs));
-    }
-
-    @Deprecated
-    public Optional<String> find(Long userId) {
-        return Optional.ofNullable(redisTemplate.opsForValue().get(KEY_PREFIX + userId));
-    }
-
-    @Deprecated
-    public void delete(Long userId) {
-        redisTemplate.delete(KEY_PREFIX + userId);
-    }
-
     public void save(Long userId, String deviceId, String refreshToken) {
         redisTemplate.opsForValue().set(
                 key(userId, deviceId), refreshToken, Duration.ofMillis(refreshTokenExpireMs));

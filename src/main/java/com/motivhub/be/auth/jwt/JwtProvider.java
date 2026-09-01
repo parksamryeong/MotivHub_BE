@@ -37,15 +37,6 @@ public class JwtProvider {
         return generateToken(userId, accessTokenExpireMs, TYPE_ACCESS, null);
     }
 
-    /**
-     * @deprecated deviceId 없이 refresh token을 발급하는 이전 방식. OAuth2SuccessHandler와
-     * AuthService가 새 오버로드로 마이그레이션되면(Task 3, Task 4) 함께 제거된다.
-     */
-    @Deprecated
-    public String generateRefreshToken(Long userId) {
-        return generateToken(userId, refreshTokenExpireMs, TYPE_REFRESH, null);
-    }
-
     public String generateRefreshToken(Long userId, String deviceId) {
         return generateToken(userId, refreshTokenExpireMs, TYPE_REFRESH, deviceId);
     }
