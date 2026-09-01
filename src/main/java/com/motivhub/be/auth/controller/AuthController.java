@@ -33,8 +33,10 @@ public class AuthController {
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<Void> logout(@AuthenticationPrincipal Long userId) {
-        authService.logout(userId);
+    public ResponseEntity<Void> logout(
+            @AuthenticationPrincipal Long userId,
+            @Valid @RequestBody RefreshRequest request) {
+        authService.logout(userId, request.refreshToken());
         return ResponseEntity.noContent().build();
     }
 }

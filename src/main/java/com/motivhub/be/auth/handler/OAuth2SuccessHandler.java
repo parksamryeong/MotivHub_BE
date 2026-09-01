@@ -8,6 +8,7 @@ import com.motivhub.be.auth.service.TempAuthCodeService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
@@ -37,10 +38,11 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
                                          Authentication authentication) throws IOException {
         CustomOAuth2User principal = (CustomOAuth2User) authentication.getPrincipal();
         Long userId = principal.getUserId();
+        String deviceId = UUID.randomUUID().toString();
 
         String accessToken = jwtProvider.generateAccessToken(userId);
-        String refreshToken = jwtProvider.generateRefreshToken(userId);
-        refreshTokenService.save(userId, refreshToken);
+        String refreshToken = jwtProvider.generateRefreshToken(userId, deviceId);
+        refreshTokenService.save(userId, deviceId, refreshToken);
 
         String code = tempAuthCodeService.issue(new TokenPair(accessToken, refreshToken));
 

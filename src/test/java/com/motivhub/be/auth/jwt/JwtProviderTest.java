@@ -30,7 +30,7 @@ class JwtProviderTest {
 
     @Test
     void generatesRefreshTokenAndExtractsUserId() {
-        String token = jwtProvider.generateRefreshToken(7L);
+        String token = jwtProvider.generateRefreshToken(7L, "device-A");
 
         assertThat(jwtProvider.getUserId(token)).isEqualTo(7L);
     }
@@ -44,9 +44,29 @@ class JwtProviderTest {
 
     @Test
     void refreshTokenHasRefreshType() {
-        String token = jwtProvider.generateRefreshToken(7L);
+        String token = jwtProvider.generateRefreshToken(7L, "device-A");
 
         assertThat(jwtProvider.getTokenType(token)).isEqualTo("refresh");
+    }
+
+    @Test
+    void refreshTokenCarriesDeviceIdClaim() {
+        String token = jwtProvider.generateRefreshToken(7L, "device-A");
+
+        assertThat(jwtProvider.getDeviceId(token)).isEqualTo("device-A");
+    }
+
+    @Test
+    void generateRefreshTokenRejectsNullDeviceId() {
+        assertThatThrownBy(() -> jwtProvider.generateRefreshToken(7L, null))
+                .isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
+    void accessTokenHasNoDeviceIdClaim() {
+        String token = jwtProvider.generateAccessToken(7L);
+
+        assertThat(jwtProvider.getDeviceId(token)).isNull();
     }
 
     @Test

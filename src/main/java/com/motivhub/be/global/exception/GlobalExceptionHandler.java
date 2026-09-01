@@ -2,6 +2,7 @@ package com.motivhub.be.global.exception;
 
 import com.motivhub.be.auth.exception.InvalidCodeException;
 import com.motivhub.be.auth.exception.InvalidRefreshTokenException;
+import com.motivhub.be.auth.exception.LogoutForbiddenException;
 import com.motivhub.be.user.exception.InvalidNicknameException;
 import com.motivhub.be.user.exception.NicknameDuplicateException;
 import com.motivhub.be.user.exception.UserNotFoundException;
@@ -33,6 +34,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleInvalidRefreshToken(InvalidRefreshTokenException e) {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                 .body(ErrorResponse.of("INVALID_REFRESH_TOKEN", e.getMessage()));
+    }
+
+    @ExceptionHandler(LogoutForbiddenException.class)
+    public ResponseEntity<ErrorResponse> handleLogoutForbidden(LogoutForbiddenException e) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(ErrorResponse.of("LOGOUT_FORBIDDEN", e.getMessage()));
     }
 
     @ExceptionHandler(NicknameDuplicateException.class)
