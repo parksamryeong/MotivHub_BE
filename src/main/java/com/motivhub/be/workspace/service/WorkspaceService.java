@@ -8,6 +8,9 @@ import com.motivhub.be.workspace.domain.WorkspaceMember;
 import com.motivhub.be.workspace.domain.WorkspaceRole;
 import com.motivhub.be.workspace.dto.WorkspaceResponse;
 import com.motivhub.be.workspace.exception.NotWorkspaceMemberException;
+import com.motivhub.be.workspace.exception.NotWorkspaceOwnerException;
+import com.motivhub.be.workspace.exception.WorkspaceLeaveRequiresTransferException;
+import com.motivhub.be.workspace.exception.WorkspaceMemberNotFoundException;
 import com.motivhub.be.workspace.exception.WorkspaceNotFoundException;
 import com.motivhub.be.workspace.repository.WorkspaceMemberRepository;
 import com.motivhub.be.workspace.repository.WorkspaceRepository;
@@ -58,7 +61,55 @@ public class WorkspaceService {
     }
 
     public WorkspaceMember getMembership(Long workspaceId, Long userId) {
+        getWorkspace(workspaceId);
         return workspaceMemberRepository.findByWorkspaceIdAndUserId(workspaceId, userId)
                 .orElseThrow(() -> new NotWorkspaceMemberException("워크스페이스 멤버가 아닙니다."));
+    }
+
+    @Transactional
+    public void delete(Long userId, Long workspaceId) {
+        requireOwner(workspaceId, userId);
+        getWorkspace(workspaceId).delete();
+    }
+
+    @Transactional
+    public void leave(Long userId, Long workspaceId) {
+        WorkspaceMember member = getMembership(workspaceId, userId);
+        if (member.isOwner()) {
+            long memberCount = workspaceMemberRepository.countByWorkspaceId(workspaceId);
+            if (memberCount > 1) {
+                throw new WorkspaceLeaveRequiresTransferException(
+                        "다른 멤버가 있는 워크스페이스는 오너십을 이전한 후에만 나갈 수 있습니다.");
+            }
+            member.getWorkspace().delete();
+            return;
+        }
+        workspaceMemberRepository.delete(member);
+    }
+
+    @Transactional
+    public void kick(Long ownerUserId, Long workspaceId, Long targetUserId) {
+        requireOwner(workspaceId, ownerUserId);
+        WorkspaceMember target = getMembership(workspaceId, targetUserId);
+        workspaceMemberRepository.delete(target);
+    }
+
+    @Transactional
+    public void transferOwnership(Long ownerUserId, Long workspaceId, Long newOwnerUserId) {
+        WorkspaceMember currentOwner = getMembership(workspaceId, ownerUserId);
+        if (!currentOwner.isOwner()) {
+            throw new NotWorkspaceOwnerException("워크스페이스 OWNER만 가능한 작업입니다.");
+        }
+        WorkspaceMember newOwner = workspaceMemberRepository.findByWorkspaceIdAndUserId(workspaceId, newOwnerUserId)
+                .orElseThrow(() -> new WorkspaceMemberNotFoundException("대상이 워크스페이스 멤버가 아닙니다."));
+        currentOwner.changeRole(WorkspaceRole.MEMBER);
+        newOwner.changeRole(WorkspaceRole.OWNER);
+    }
+
+    public void requireOwner(Long workspaceId, Long userId) {
+        WorkspaceMember member = getMembership(workspaceId, userId);
+        if (!member.isOwner()) {
+            throw new NotWorkspaceOwnerException("워크스페이스 OWNER만 가능한 작업입니다.");
+        }
     }
 }
