@@ -32,7 +32,7 @@ public class RefreshTokenService {
     public Optional<String> find(Long userId) {
         return Optional.ofNullable(redisTemplate.opsForValue().get(KEY_PREFIX + userId));
     }
-    
+
     @Deprecated
     public void delete(Long userId) {
         redisTemplate.delete(KEY_PREFIX + userId);
