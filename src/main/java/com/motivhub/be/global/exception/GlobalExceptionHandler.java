@@ -6,6 +6,14 @@ import com.motivhub.be.auth.exception.LogoutForbiddenException;
 import com.motivhub.be.user.exception.InvalidNicknameException;
 import com.motivhub.be.user.exception.NicknameDuplicateException;
 import com.motivhub.be.user.exception.UserNotFoundException;
+import com.motivhub.be.workspace.exception.InvalidInviteTokenException;
+import com.motivhub.be.workspace.exception.InviteExpiredException;
+import com.motivhub.be.workspace.exception.InviteRevokedException;
+import com.motivhub.be.workspace.exception.NotWorkspaceMemberException;
+import com.motivhub.be.workspace.exception.NotWorkspaceOwnerException;
+import com.motivhub.be.workspace.exception.WorkspaceLeaveRequiresTransferException;
+import com.motivhub.be.workspace.exception.WorkspaceMemberNotFoundException;
+import com.motivhub.be.workspace.exception.WorkspaceNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -40,6 +48,54 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleLogoutForbidden(LogoutForbiddenException e) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(ErrorResponse.of("LOGOUT_FORBIDDEN", e.getMessage()));
+    }
+
+    @ExceptionHandler(WorkspaceNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleWorkspaceNotFound(WorkspaceNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("WORKSPACE_NOT_FOUND", e.getMessage()));
+    }
+
+    @ExceptionHandler(NotWorkspaceMemberException.class)
+    public ResponseEntity<ErrorResponse> handleNotWorkspaceMember(NotWorkspaceMemberException e) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(ErrorResponse.of("NOT_WORKSPACE_MEMBER", e.getMessage()));
+    }
+
+    @ExceptionHandler(NotWorkspaceOwnerException.class)
+    public ResponseEntity<ErrorResponse> handleNotWorkspaceOwner(NotWorkspaceOwnerException e) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(ErrorResponse.of("NOT_WORKSPACE_OWNER", e.getMessage()));
+    }
+
+    @ExceptionHandler(WorkspaceLeaveRequiresTransferException.class)
+    public ResponseEntity<ErrorResponse> handleWorkspaceLeaveRequiresTransfer(WorkspaceLeaveRequiresTransferException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("WORKSPACE_LEAVE_REQUIRES_TRANSFER", e.getMessage()));
+    }
+
+    @ExceptionHandler(WorkspaceMemberNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleWorkspaceMemberNotFound(WorkspaceMemberNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("WORKSPACE_MEMBER_NOT_FOUND", e.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidInviteTokenException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidInviteToken(InvalidInviteTokenException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("INVALID_INVITE_TOKEN", e.getMessage()));
+    }
+
+    @ExceptionHandler(InviteExpiredException.class)
+    public ResponseEntity<ErrorResponse> handleInviteExpired(InviteExpiredException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("INVITE_EXPIRED", e.getMessage()));
+    }
+
+    @ExceptionHandler(InviteRevokedException.class)
+    public ResponseEntity<ErrorResponse> handleInviteRevoked(InviteRevokedException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("INVITE_REVOKED", e.getMessage()));
     }
 
     @ExceptionHandler(NicknameDuplicateException.class)
