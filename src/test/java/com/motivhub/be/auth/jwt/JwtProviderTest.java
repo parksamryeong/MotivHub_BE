@@ -57,6 +57,12 @@ class JwtProviderTest {
     }
 
     @Test
+    void generateRefreshTokenRejectsNullDeviceId() {
+        assertThatThrownBy(() -> jwtProvider.generateRefreshToken(7L, null))
+                .isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
     void accessTokenHasNoDeviceIdClaim() {
         String token = jwtProvider.generateAccessToken(7L);
 

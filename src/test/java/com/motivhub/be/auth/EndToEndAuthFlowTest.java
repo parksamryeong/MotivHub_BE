@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.motivhub.be.auth.dto.ExchangeRequest;
+import com.motivhub.be.auth.dto.RefreshRequest;
 import com.motivhub.be.auth.dto.TokenPair;
 import com.motivhub.be.auth.handler.OAuth2SuccessHandler;
 import com.motivhub.be.auth.oauth.CustomOAuth2User;
@@ -66,6 +67,25 @@ class EndToEndAuthFlowTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.email").value("e2e@github.com"))
                 .andExpect(jsonPath("$.nicknameConfigured").value(false));
+
+        TokenPair refreshedTokens = objectMapper.readValue(
+                mockMvc.perform(post("/api/auth/refresh")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.writeValueAsString(new RefreshRequest(tokens.refreshToken()))))
+                        .andExpect(status().isOk())
+                        .andReturn().getResponse().getContentAsString(),
+                TokenPair.class);
+
+        mockMvc.perform(post("/api/auth/logout")
+                        .header("Authorization", "Bearer " + refreshedTokens.accessToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new RefreshRequest(refreshedTokens.refreshToken()))))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(post("/api/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new RefreshRequest(refreshedTokens.refreshToken()))))
+                .andExpect(status().isUnauthorized());
 
         assertThat(userRepository.findById(user.getId())).isPresent();
     }
