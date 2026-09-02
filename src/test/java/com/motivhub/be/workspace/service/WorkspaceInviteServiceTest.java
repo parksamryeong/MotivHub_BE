@@ -137,4 +137,17 @@ class WorkspaceInviteServiceTest extends AbstractIntegrationTest {
         assertThatThrownBy(() -> workspaceInviteService.revokeInvite(ownerA.getId(), workspaceA.id(), inviteB.id()))
                 .isInstanceOf(InvalidInviteTokenException.class);
     }
+
+    @Test
+    void acceptFailsWhenWorkspaceWasDeletedAfterInviteCreated() {
+        User owner = newUser("del-accept-owner");
+        User joiner = newUser("del-accept-joiner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "삭제될 초대 워크스페이스");
+        WorkspaceInviteResponse invite = workspaceInviteService.createInvite(owner.getId(), workspace.id(), null);
+
+        workspaceService.delete(owner.getId(), workspace.id());
+
+        assertThatThrownBy(() -> workspaceInviteService.accept(joiner.getId(), invite.token()))
+                .isInstanceOf(com.motivhub.be.workspace.exception.WorkspaceNotFoundException.class);
+    }
 }

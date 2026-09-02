@@ -11,6 +11,9 @@ import com.motivhub.be.task.exception.InvalidTaskStatusTransitionException;
 import com.motivhub.be.task.exception.TaskEditForbiddenException;
 import com.motivhub.be.task.exception.TaskNotFoundException;
 import com.motivhub.be.task.exception.TaskPeriodEditForbiddenException;
+import com.motivhub.be.task.domain.TaskComment;
+import com.motivhub.be.task.repository.TaskAssigneeRepository;
+import com.motivhub.be.task.repository.TaskCommentRepository;
 import com.motivhub.be.user.domain.SocialProvider;
 import com.motivhub.be.user.domain.User;
 import com.motivhub.be.user.repository.UserRepository;
@@ -32,6 +35,9 @@ class TaskServiceTest extends AbstractIntegrationTest {
     @Autowired private WorkspaceService workspaceService;
     @Autowired private UserRepository userRepository;
     @Autowired private WorkspaceMemberRepository workspaceMemberRepository;
+    @Autowired private TaskAssigneeRepository taskAssigneeRepository;
+    @Autowired private TaskCommentRepository taskCommentRepository;
+    @Autowired private TaskExpirationScheduler taskExpirationScheduler;
 
     private User newUser(String suffix) {
         return userRepository.save(User.create(
@@ -216,5 +222,39 @@ class TaskServiceTest extends AbstractIntegrationTest {
         TaskResponse updated = taskService.addAssignee(assigneeA.getId(), task.id(), assigneeB.getId());
 
         assertThat(updated.assigneeIds()).containsExactlyInAnyOrder(assigneeA.getId(), assigneeB.getId());
+    }
+
+    @Test
+    void deletingTaskWithAssigneeAndCommentDoesNotThrow() {
+        User owner = newUser("del-cascade-owner");
+        User assignee = newUser("del-cascade-assignee");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "삭제 캐스케이드 워크스페이스");
+        joinAsMember(workspace.id(), assignee);
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("담당자·댓글 있는 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1),
+                        List.of(assignee.getId())));
+        taskCommentRepository.save(TaskComment.create(
+                taskService.getTask(task.id()), owner, "댓글입니다"));
+
+        taskService.delete(owner.getId(), task.id());
+
+        assertThatThrownBy(() -> taskService.getDetail(owner.getId(), task.id()))
+                .isInstanceOf(TaskNotFoundException.class);
+        assertThat(taskAssigneeRepository.findByTaskId(task.id())).isEmpty();
+        assertThat(taskCommentRepository.findByTaskIdOrderByCreatedAtAsc(task.id())).isEmpty();
+    }
+
+    @Test
+    void extendingExpiredTaskToExactlyTodayRevivesIt() {
+        User owner = newUser("expire-boundary-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "만료 경계 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("경계 태스크", null, LocalDate.now().minusDays(5), LocalDate.now().minusDays(1), List.of()));
+        taskExpirationScheduler.expireOverdueTasks();
+        assertThat(taskService.getDetail(owner.getId(), task.id()).status()).isEqualTo(TaskStatus.EXPIRED);
+
+        TaskResponse revived = taskService.updatePeriod(owner.getId(), task.id(), LocalDate.now(), LocalDate.now());
+
+        assertThat(revived.status()).isEqualTo(TaskStatus.WAITING);
     }
 }

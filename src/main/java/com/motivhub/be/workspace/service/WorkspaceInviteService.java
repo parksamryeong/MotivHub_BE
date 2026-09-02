@@ -78,7 +78,7 @@ public class WorkspaceInviteService {
         }
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException("유저를 찾을 수 없습니다."));
-        Workspace workspace = invite.getWorkspace();
+        Workspace workspace = workspaceService.getWorkspace(invite.getWorkspace().getId());
         WorkspaceMember member = workspaceMemberRepository.findByWorkspaceIdAndUserId(workspace.getId(), userId)
                 .orElseGet(() -> workspaceMemberRepository.save(
                         WorkspaceMember.create(workspace, user, WorkspaceRole.MEMBER)));

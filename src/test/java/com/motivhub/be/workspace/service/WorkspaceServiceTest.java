@@ -205,4 +205,14 @@ class WorkspaceServiceTest extends AbstractIntegrationTest {
         assertThatThrownBy(() -> workspaceService.getDetail(owner.getId(), workspace.id()))
                 .isInstanceOf(WorkspaceNotFoundException.class);
     }
+
+    @Test
+    void deletedWorkspaceIsExcludedFromListMine() {
+        User owner = newUser("del-listmine-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "삭제될 워크스페이스4");
+
+        workspaceService.delete(owner.getId(), workspace.id());
+
+        assertThat(workspaceService.listMine(owner.getId())).isEmpty();
+    }
 }

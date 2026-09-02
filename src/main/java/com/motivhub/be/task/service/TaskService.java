@@ -7,6 +7,7 @@ import com.motivhub.be.task.exception.TaskEditForbiddenException;
 import com.motivhub.be.task.exception.TaskNotFoundException;
 import com.motivhub.be.task.exception.TaskPeriodEditForbiddenException;
 import com.motivhub.be.task.repository.TaskAssigneeRepository;
+import com.motivhub.be.task.repository.TaskCommentRepository;
 import com.motivhub.be.task.repository.TaskRepository;
 import com.motivhub.be.task.domain.TaskAssignee;
 import com.motivhub.be.task.exception.InvalidTaskStatusTransitionException;
@@ -31,13 +32,16 @@ public class TaskService {
 
     private final TaskRepository taskRepository;
     private final TaskAssigneeRepository taskAssigneeRepository;
+    private final TaskCommentRepository taskCommentRepository;
     private final UserRepository userRepository;
     private final WorkspaceService workspaceService;
 
     public TaskService(TaskRepository taskRepository, TaskAssigneeRepository taskAssigneeRepository,
-                        UserRepository userRepository, WorkspaceService workspaceService) {
+                        TaskCommentRepository taskCommentRepository, UserRepository userRepository,
+                        WorkspaceService workspaceService) {
         this.taskRepository = taskRepository;
         this.taskAssigneeRepository = taskAssigneeRepository;
+        this.taskCommentRepository = taskCommentRepository;
         this.userRepository = userRepository;
         this.workspaceService = workspaceService;
     }
@@ -120,6 +124,8 @@ public class TaskService {
         if (!allowed) {
             throw new TaskEditForbiddenException("태스크 삭제 권한이 없습니다.");
         }
+        taskAssigneeRepository.deleteByTaskId(taskId);
+        taskCommentRepository.deleteByTaskId(taskId);
         taskRepository.delete(task);
     }
 

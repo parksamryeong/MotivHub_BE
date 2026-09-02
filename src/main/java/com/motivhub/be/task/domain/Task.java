@@ -81,7 +81,7 @@ public class Task {
     public void updatePeriod(LocalDate startDate, LocalDate dueDate) {
         this.startDate = startDate;
         this.dueDate = dueDate;
-        if (this.status == TaskStatus.EXPIRED && dueDate.isAfter(LocalDate.now())) {
+        if (this.status == TaskStatus.EXPIRED && !dueDate.isBefore(LocalDate.now())) {
             this.status = TaskStatus.WAITING;
         }
     }
