@@ -3,16 +3,21 @@ package com.motivhub.be.task.service;
 import com.motivhub.be.task.domain.Task;
 import com.motivhub.be.task.dto.TaskCreateRequest;
 import com.motivhub.be.task.dto.TaskResponse;
+import com.motivhub.be.task.exception.TaskEditForbiddenException;
 import com.motivhub.be.task.exception.TaskNotFoundException;
+import com.motivhub.be.task.exception.TaskPeriodEditForbiddenException;
 import com.motivhub.be.task.repository.TaskAssigneeRepository;
 import com.motivhub.be.task.repository.TaskRepository;
 import com.motivhub.be.task.domain.TaskAssignee;
 import com.motivhub.be.user.domain.User;
 import com.motivhub.be.user.exception.UserNotFoundException;
 import com.motivhub.be.user.repository.UserRepository;
+import com.motivhub.be.task.domain.TaskStatus;
 import com.motivhub.be.workspace.domain.Workspace;
 import com.motivhub.be.workspace.domain.WorkspaceMember;
+import com.motivhub.be.workspace.exception.NotWorkspaceOwnerException;
 import com.motivhub.be.workspace.service.WorkspaceService;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -83,5 +88,45 @@ public class TaskService {
         return taskAssigneeRepository.findByTaskId(taskId).stream()
                 .map(assignee -> assignee.getUser().getId())
                 .toList();
+    }
+
+    @Transactional
+    public TaskResponse updateContent(Long userId, Long taskId, String name, String description) {
+        Task task = getTask(taskId);
+        requireAssigneeOrOwner(task, userId);
+        task.updateContent(name, description);
+        return TaskResponse.of(task, getAssigneeIds(taskId));
+    }
+
+    @Transactional
+    public TaskResponse updatePeriod(Long userId, Long taskId, LocalDate startDate, LocalDate dueDate) {
+        Task task = getTask(taskId);
+        try {
+            workspaceService.requireOwner(task.getWorkspace().getId(), userId);
+        } catch (NotWorkspaceOwnerException e) {
+            throw new TaskPeriodEditForbiddenException("태스크 기간 수정은 워크스페이스 OWNER만 가능합니다.");
+        }
+        task.updatePeriod(startDate, dueDate);
+        return TaskResponse.of(task, getAssigneeIds(taskId));
+    }
+
+    @Transactional
+    public void delete(Long userId, Long taskId) {
+        Task task = getTask(taskId);
+        WorkspaceMember member = workspaceService.getMembership(task.getWorkspace().getId(), userId);
+        boolean allowed = member.isOwner()
+                || (task.getStatus() != TaskStatus.EXPIRED && task.isCreatedBy(userId));
+        if (!allowed) {
+            throw new TaskEditForbiddenException("태스크 삭제 권한이 없습니다.");
+        }
+        taskRepository.delete(task);
+    }
+
+    private void requireAssigneeOrOwner(Task task, Long userId) {
+        WorkspaceMember member = workspaceService.getMembership(task.getWorkspace().getId(), userId);
+        boolean isAssignee = taskAssigneeRepository.existsByTaskIdAndUserId(task.getId(), userId);
+        if (!member.isOwner() && !isAssignee) {
+            throw new TaskEditForbiddenException("태스크 수정 권한이 없습니다(담당자 또는 OWNER만 가능).");
+        }
     }
 }

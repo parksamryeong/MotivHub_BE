@@ -4,12 +4,14 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.annotation.Transactional;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
 @SpringBootTest
 @ActiveProfiles("test")
+@Transactional
 public abstract class AbstractIntegrationTest {
 
     // 싱글턴 컨테이너 패턴: @Container를 붙이지 않아야 JUnit5가 테스트 클래스마다
