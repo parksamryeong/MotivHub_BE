@@ -3,6 +3,10 @@ package com.motivhub.be.global.exception;
 import com.motivhub.be.auth.exception.InvalidCodeException;
 import com.motivhub.be.auth.exception.InvalidRefreshTokenException;
 import com.motivhub.be.auth.exception.LogoutForbiddenException;
+import com.motivhub.be.task.exception.InvalidTaskStatusTransitionException;
+import com.motivhub.be.task.exception.TaskEditForbiddenException;
+import com.motivhub.be.task.exception.TaskNotFoundException;
+import com.motivhub.be.task.exception.TaskPeriodEditForbiddenException;
 import com.motivhub.be.user.exception.InvalidNicknameException;
 import com.motivhub.be.user.exception.NicknameDuplicateException;
 import com.motivhub.be.user.exception.UserNotFoundException;
@@ -114,5 +118,29 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleUserNotFound(UserNotFoundException e) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(ErrorResponse.of("USER_NOT_FOUND", e.getMessage()));
+    }
+
+    @ExceptionHandler(TaskNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleTaskNotFound(TaskNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("TASK_NOT_FOUND", e.getMessage()));
+    }
+
+    @ExceptionHandler(TaskEditForbiddenException.class)
+    public ResponseEntity<ErrorResponse> handleTaskEditForbidden(TaskEditForbiddenException e) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(ErrorResponse.of("TASK_EDIT_FORBIDDEN", e.getMessage()));
+    }
+
+    @ExceptionHandler(TaskPeriodEditForbiddenException.class)
+    public ResponseEntity<ErrorResponse> handleTaskPeriodEditForbidden(TaskPeriodEditForbiddenException e) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(ErrorResponse.of("TASK_PERIOD_EDIT_FORBIDDEN", e.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidTaskStatusTransitionException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidTaskStatusTransition(InvalidTaskStatusTransitionException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("INVALID_TASK_STATUS_TRANSITION", e.getMessage()));
     }
 }
