@@ -9,6 +9,7 @@ import com.motivhub.be.task.exception.TaskPeriodEditForbiddenException;
 import com.motivhub.be.task.repository.TaskAssigneeRepository;
 import com.motivhub.be.task.repository.TaskRepository;
 import com.motivhub.be.task.domain.TaskAssignee;
+import com.motivhub.be.task.exception.InvalidTaskStatusTransitionException;
 import com.motivhub.be.user.domain.User;
 import com.motivhub.be.user.exception.UserNotFoundException;
 import com.motivhub.be.user.repository.UserRepository;
@@ -120,6 +121,39 @@ public class TaskService {
             throw new TaskEditForbiddenException("태스크 삭제 권한이 없습니다.");
         }
         taskRepository.delete(task);
+    }
+
+    @Transactional
+    public TaskResponse changeStatus(Long userId, Long taskId, TaskStatus newStatus) {
+        Task task = getTask(taskId);
+        requireAssigneeOrOwner(task, userId);
+        if (newStatus == TaskStatus.EXPIRED || task.getStatus() == TaskStatus.EXPIRED) {
+            throw new InvalidTaskStatusTransitionException("만료 상태는 시스템(자동) 또는 기간 연장을 통해서만 변경됩니다.");
+        }
+        task.changeStatus(newStatus);
+        return TaskResponse.of(task, getAssigneeIds(taskId));
+    }
+
+    @Transactional
+    public TaskResponse addAssignee(Long userId, Long taskId, Long targetUserId) {
+        Task task = getTask(taskId);
+        requireAssigneeOrOwner(task, userId);
+        workspaceService.getMembership(task.getWorkspace().getId(), targetUserId);
+        if (!taskAssigneeRepository.existsByTaskIdAndUserId(taskId, targetUserId)) {
+            User target = userRepository.findById(targetUserId)
+                    .orElseThrow(() -> new UserNotFoundException("유저를 찾을 수 없습니다."));
+            taskAssigneeRepository.save(TaskAssignee.create(task, target));
+        }
+        return TaskResponse.of(task, getAssigneeIds(taskId));
+    }
+
+    @Transactional
+    public TaskResponse removeAssignee(Long userId, Long taskId, Long targetUserId) {
+        Task task = getTask(taskId);
+        requireAssigneeOrOwner(task, userId);
+        taskAssigneeRepository.findByTaskIdAndUserId(taskId, targetUserId)
+                .ifPresent(taskAssigneeRepository::delete);
+        return TaskResponse.of(task, getAssigneeIds(taskId));
     }
 
     private void requireAssigneeOrOwner(Task task, Long userId) {

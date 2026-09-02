@@ -6,6 +6,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.motivhub.be.support.AbstractIntegrationTest;
 import com.motivhub.be.task.dto.TaskCreateRequest;
 import com.motivhub.be.task.dto.TaskResponse;
+import com.motivhub.be.task.domain.TaskStatus;
+import com.motivhub.be.task.exception.InvalidTaskStatusTransitionException;
 import com.motivhub.be.task.exception.TaskEditForbiddenException;
 import com.motivhub.be.task.exception.TaskNotFoundException;
 import com.motivhub.be.task.exception.TaskPeriodEditForbiddenException;
@@ -157,5 +159,62 @@ class TaskServiceTest extends AbstractIntegrationTest {
 
         assertThatThrownBy(() -> taskService.delete(bystander.getId(), task.id()))
                 .isInstanceOf(TaskEditForbiddenException.class);
+    }
+
+    @Test
+    void assigneeCanChangeStatus() {
+        User owner = newUser("status-owner");
+        User assignee = newUser("status-assignee");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "상태변경 워크스페이스");
+        joinAsMember(workspace.id(), assignee);
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("상태 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of(assignee.getId())));
+
+        TaskResponse updated = taskService.changeStatus(assignee.getId(), task.id(), TaskStatus.IN_PROGRESS);
+
+        assertThat(updated.status()).isEqualTo(TaskStatus.IN_PROGRESS);
+    }
+
+    @Test
+    void cannotChangeStatusToExpiredDirectly() {
+        User owner = newUser("status-owner2");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "상태변경 워크스페이스2");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("상태 태스크2", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+
+        assertThatThrownBy(() -> taskService.changeStatus(owner.getId(), task.id(), TaskStatus.EXPIRED))
+                .isInstanceOf(InvalidTaskStatusTransitionException.class);
+    }
+
+    @Test
+    void ownerCanAddAndRemoveAssignee() {
+        User owner = newUser("assignee-owner");
+        User newAssignee = newUser("assignee-new");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "담당자 워크스페이스");
+        joinAsMember(workspace.id(), newAssignee);
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("담당자 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+
+        TaskResponse added = taskService.addAssignee(owner.getId(), task.id(), newAssignee.getId());
+        assertThat(added.assigneeIds()).containsExactly(newAssignee.getId());
+
+        TaskResponse removed = taskService.removeAssignee(owner.getId(), task.id(), newAssignee.getId());
+        assertThat(removed.assigneeIds()).isEmpty();
+    }
+
+    @Test
+    void existingAssigneeCanAddAnotherAssignee() {
+        User owner = newUser("assignee-owner2");
+        User assigneeA = newUser("assignee-a2");
+        User assigneeB = newUser("assignee-b2");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "담당자 워크스페이스2");
+        joinAsMember(workspace.id(), assigneeA);
+        joinAsMember(workspace.id(), assigneeB);
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("담당자 태스크2", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of(assigneeA.getId())));
+
+        TaskResponse updated = taskService.addAssignee(assigneeA.getId(), task.id(), assigneeB.getId());
+
+        assertThat(updated.assigneeIds()).containsExactlyInAnyOrder(assigneeA.getId(), assigneeB.getId());
     }
 }
