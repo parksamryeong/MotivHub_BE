@@ -28,4 +28,16 @@ class SecurityConfigTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/auth/exchange"))
                 .andExpect(status().isMethodNotAllowed());
     }
+
+    @Test
+    void apiDocsAreAccessibleWithoutAuth() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void swaggerUiIsAccessibleWithoutAuth() throws Exception {
+        mockMvc.perform(get("/swagger-ui/index.html"))
+                .andExpect(status().isOk());
+    }
 }
