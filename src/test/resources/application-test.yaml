@@ -1,5 +1,9 @@
 jwt:
   secret: test-only-jwt-secret-not-for-production-use-minimum-32-bytes
+management:
+  health:
+    mail:
+      enabled: false
 spring:
   security:
     oauth2:
