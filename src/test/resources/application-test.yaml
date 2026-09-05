@@ -1,5 +1,10 @@
 jwt:
   secret: test-only-jwt-secret-not-for-production-use-minimum-32-bytes
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
 management:
   health:
     mail:

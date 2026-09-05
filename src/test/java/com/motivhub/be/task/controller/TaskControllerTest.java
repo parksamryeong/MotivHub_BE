@@ -15,7 +15,11 @@ import com.motivhub.be.task.dto.TaskResponse;
 import com.motivhub.be.user.domain.SocialProvider;
 import com.motivhub.be.user.domain.User;
 import com.motivhub.be.user.repository.UserRepository;
+import com.motivhub.be.workspace.domain.Workspace;
+import com.motivhub.be.workspace.domain.WorkspaceMember;
+import com.motivhub.be.workspace.domain.WorkspaceRole;
 import com.motivhub.be.workspace.dto.WorkspaceResponse;
+import com.motivhub.be.workspace.repository.WorkspaceMemberRepository;
 import com.motivhub.be.workspace.service.WorkspaceService;
 import java.time.LocalDate;
 import java.util.List;
@@ -33,6 +37,7 @@ class TaskControllerTest extends AbstractIntegrationTest {
     @Autowired private JwtProvider jwtProvider;
     @Autowired private UserRepository userRepository;
     @Autowired private WorkspaceService workspaceService;
+    @Autowired private WorkspaceMemberRepository workspaceMemberRepository;
 
     private User newUser(String suffix) {
         return userRepository.save(User.create(
@@ -41,6 +46,11 @@ class TaskControllerTest extends AbstractIntegrationTest {
 
     private String tokenFor(User user) {
         return jwtProvider.generateAccessToken(user.getId());
+    }
+
+    private void joinAsMember(Long workspaceId, User user) {
+        Workspace workspace = workspaceService.getWorkspace(workspaceId);
+        workspaceMemberRepository.save(WorkspaceMember.create(workspace, user, WorkspaceRole.MEMBER));
     }
 
     @Test
@@ -81,5 +91,32 @@ class TaskControllerTest extends AbstractIntegrationTest {
                         .content(objectMapper.writeValueAsString(
                                 new TaskPeriodUpdateRequest(LocalDate.now(), LocalDate.now().plusDays(20)))))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void createAndListResponsesIncludeAssigneeAndCreatorNicknames() throws Exception {
+        User owner = newUser("t3-owner");
+        User assignee = newUser("t3-assignee");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "닉네임 API 워크스페이스");
+        joinAsMember(workspace.id(), assignee);
+
+        mockMvc.perform(post("/api/workspaces/{id}/tasks", workspace.id())
+                        .header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new TaskCreateRequest(
+                                "닉네임 API 태스크", "설명", LocalDate.now(), LocalDate.now().plusDays(1),
+                                List.of(assignee.getId())))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.createdBy.id").value(owner.getId()))
+                .andExpect(jsonPath("$.createdBy.nickname").value(owner.getNickname()))
+                .andExpect(jsonPath("$.assignees[0].id").value(assignee.getId()))
+                .andExpect(jsonPath("$.assignees[0].nickname").value(assignee.getNickname()));
+
+        mockMvc.perform(get("/api/workspaces/{id}/tasks", workspace.id())
+                        .header("Authorization", "Bearer " + tokenFor(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].createdBy.nickname").value(owner.getNickname()))
+                .andExpect(jsonPath("$[0].assignees[0].nickname").value(assignee.getNickname()));
     }
 }
