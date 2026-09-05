@@ -16,6 +16,7 @@ import com.motivhub.be.task.repository.TaskAssigneeRepository;
 import com.motivhub.be.task.repository.TaskCommentRepository;
 import com.motivhub.be.user.domain.SocialProvider;
 import com.motivhub.be.user.domain.User;
+import com.motivhub.be.user.dto.UserSummary;
 import com.motivhub.be.user.repository.UserRepository;
 import com.motivhub.be.workspace.domain.Workspace;
 import com.motivhub.be.workspace.domain.WorkspaceMember;
@@ -202,10 +203,10 @@ class TaskServiceTest extends AbstractIntegrationTest {
                 new TaskCreateRequest("담당자 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
 
         TaskResponse added = taskService.addAssignee(owner.getId(), task.id(), newAssignee.getId());
-        assertThat(added.assigneeIds()).containsExactly(newAssignee.getId());
+        assertThat(added.assignees()).extracting(UserSummary::id).containsExactly(newAssignee.getId());
 
         TaskResponse removed = taskService.removeAssignee(owner.getId(), task.id(), newAssignee.getId());
-        assertThat(removed.assigneeIds()).isEmpty();
+        assertThat(removed.assignees()).isEmpty();
     }
 
     @Test
@@ -221,7 +222,8 @@ class TaskServiceTest extends AbstractIntegrationTest {
 
         TaskResponse updated = taskService.addAssignee(assigneeA.getId(), task.id(), assigneeB.getId());
 
-        assertThat(updated.assigneeIds()).containsExactlyInAnyOrder(assigneeA.getId(), assigneeB.getId());
+        assertThat(updated.assignees()).extracting(UserSummary::id)
+                .containsExactlyInAnyOrder(assigneeA.getId(), assigneeB.getId());
     }
 
     @Test
@@ -256,5 +258,53 @@ class TaskServiceTest extends AbstractIntegrationTest {
         TaskResponse revived = taskService.updatePeriod(owner.getId(), task.id(), LocalDate.now(), LocalDate.now());
 
         assertThat(revived.status()).isEqualTo(TaskStatus.WAITING);
+    }
+
+    @Test
+    void getDetailIncludesAssigneeAndCreatorNicknames() {
+        User owner = newUser("nickname-owner");
+        User assignee = newUser("nickname-assignee");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "닉네임 워크스페이스");
+        joinAsMember(workspace.id(), assignee);
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("닉네임 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of(assignee.getId())));
+
+        TaskResponse detail = taskService.getDetail(owner.getId(), task.id());
+
+        assertThat(detail.createdBy().nickname()).isEqualTo(owner.getNickname());
+        assertThat(detail.assignees()).extracting(UserSummary::nickname).containsExactly(assignee.getNickname());
+    }
+
+    @Test
+    void listByWorkspaceIncludesAssigneeAndCreatorNicknames() {
+        User owner = newUser("nickname-list-owner");
+        User assignee = newUser("nickname-list-assignee");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "닉네임 목록 워크스페이스");
+        joinAsMember(workspace.id(), assignee);
+        taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("닉네임 목록 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of(assignee.getId())));
+
+        List<TaskResponse> tasks = taskService.listByWorkspace(owner.getId(), workspace.id());
+
+        assertThat(tasks).hasSize(1);
+        assertThat(tasks.get(0).createdBy().nickname()).isEqualTo(owner.getNickname());
+        assertThat(tasks.get(0).assignees()).extracting(UserSummary::nickname).containsExactly(assignee.getNickname());
+    }
+
+    @Test
+    void withdrawnAssigneeStillShowsMaskedNickname() {
+        User owner = newUser("nickname-wd-owner");
+        User assignee = newUser("nickname-wd-assignee");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "탈퇴 닉네임 워크스페이스");
+        joinAsMember(workspace.id(), assignee);
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("탈퇴 닉네임 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of(assignee.getId())));
+        assignee.withdraw();
+        userRepository.save(assignee);
+
+        TaskResponse detail = taskService.getDetail(owner.getId(), task.id());
+
+        assertThat(detail.assignees()).extracting(UserSummary::nickname).containsExactly(assignee.getNickname());
+        assertThat(detail.assignees().get(0).nickname()).startsWith("탈퇴한 사용자_");
     }
 }

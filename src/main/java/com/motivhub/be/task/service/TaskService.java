@@ -12,6 +12,7 @@ import com.motivhub.be.task.repository.TaskRepository;
 import com.motivhub.be.task.domain.TaskAssignee;
 import com.motivhub.be.task.exception.InvalidTaskStatusTransitionException;
 import com.motivhub.be.user.domain.User;
+import com.motivhub.be.user.dto.UserSummary;
 import com.motivhub.be.user.exception.UserNotFoundException;
 import com.motivhub.be.user.repository.UserRepository;
 import com.motivhub.be.task.domain.TaskStatus;
@@ -62,26 +63,26 @@ public class TaskService {
                     .orElseThrow(() -> new UserNotFoundException("유저를 찾을 수 없습니다."));
             taskAssigneeRepository.save(TaskAssignee.create(task, assignee));
         }
-        return TaskResponse.of(task, getAssigneeIds(task.getId()));
+        return TaskResponse.of(task, getAssigneeSummaries(task.getId()));
     }
 
     public List<TaskResponse> listByWorkspace(Long userId, Long workspaceId) {
         workspaceService.getMembership(workspaceId, userId);
         List<Task> tasks = taskRepository.findByWorkspaceId(workspaceId);
         List<Long> taskIds = tasks.stream().map(Task::getId).toList();
-        Map<Long, List<Long>> assigneeIdsByTaskId = taskAssigneeRepository.findByTaskIdIn(taskIds).stream()
+        Map<Long, List<UserSummary>> assigneesByTaskId = taskAssigneeRepository.findByTaskIdIn(taskIds).stream()
                 .collect(Collectors.groupingBy(
                         assignee -> assignee.getTask().getId(),
-                        Collectors.mapping(assignee -> assignee.getUser().getId(), Collectors.toList())));
+                        Collectors.mapping(assignee -> UserSummary.from(assignee.getUser()), Collectors.toList())));
         return tasks.stream()
-                .map(task -> TaskResponse.of(task, assigneeIdsByTaskId.getOrDefault(task.getId(), List.of())))
+                .map(task -> TaskResponse.of(task, assigneesByTaskId.getOrDefault(task.getId(), List.of())))
                 .toList();
     }
 
     public TaskResponse getDetail(Long userId, Long taskId) {
         Task task = getTask(taskId);
         workspaceService.getMembership(task.getWorkspace().getId(), userId);
-        return TaskResponse.of(task, getAssigneeIds(taskId));
+        return TaskResponse.of(task, getAssigneeSummaries(taskId));
     }
 
     public Task getTask(Long taskId) {
@@ -89,9 +90,9 @@ public class TaskService {
                 .orElseThrow(() -> new TaskNotFoundException("태스크를 찾을 수 없습니다."));
     }
 
-    List<Long> getAssigneeIds(Long taskId) {
+    List<UserSummary> getAssigneeSummaries(Long taskId) {
         return taskAssigneeRepository.findByTaskId(taskId).stream()
-                .map(assignee -> assignee.getUser().getId())
+                .map(assignee -> UserSummary.from(assignee.getUser()))
                 .toList();
     }
 
@@ -100,7 +101,7 @@ public class TaskService {
         Task task = getTask(taskId);
         requireAssigneeOrOwner(task, userId);
         task.updateContent(name, description);
-        return TaskResponse.of(task, getAssigneeIds(taskId));
+        return TaskResponse.of(task, getAssigneeSummaries(taskId));
     }
 
     @Transactional
@@ -112,7 +113,7 @@ public class TaskService {
             throw new TaskPeriodEditForbiddenException("태스크 기간 수정은 워크스페이스 OWNER만 가능합니다.");
         }
         task.updatePeriod(startDate, dueDate);
-        return TaskResponse.of(task, getAssigneeIds(taskId));
+        return TaskResponse.of(task, getAssigneeSummaries(taskId));
     }
 
     @Transactional
@@ -137,7 +138,7 @@ public class TaskService {
             throw new InvalidTaskStatusTransitionException("만료 상태는 시스템(자동) 또는 기간 연장을 통해서만 변경됩니다.");
         }
         task.changeStatus(newStatus);
-        return TaskResponse.of(task, getAssigneeIds(taskId));
+        return TaskResponse.of(task, getAssigneeSummaries(taskId));
     }
 
     @Transactional
@@ -150,7 +151,7 @@ public class TaskService {
                     .orElseThrow(() -> new UserNotFoundException("유저를 찾을 수 없습니다."));
             taskAssigneeRepository.save(TaskAssignee.create(task, target));
         }
-        return TaskResponse.of(task, getAssigneeIds(taskId));
+        return TaskResponse.of(task, getAssigneeSummaries(taskId));
     }
 
     @Transactional
@@ -159,7 +160,7 @@ public class TaskService {
         requireAssigneeOrOwner(task, userId);
         taskAssigneeRepository.findByTaskIdAndUserId(taskId, targetUserId)
                 .ifPresent(taskAssigneeRepository::delete);
-        return TaskResponse.of(task, getAssigneeIds(taskId));
+        return TaskResponse.of(task, getAssigneeSummaries(taskId));
     }
 
     private void requireAssigneeOrOwner(Task task, Long userId) {
