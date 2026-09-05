@@ -65,3 +65,12 @@
 - **결과**: 항목 N개 기준 쿼리 수가 N+1에서 1~2회로 감소. 지금 규모(개인/소규모 팀 프로젝트)에서는 체감 차이가 크진 않지만, 코드 리뷰에서 이런 패턴을 습관적으로 잡아내는 연습이 됨.
 
 ---
+
+## [2026-09-06] Swagger/OpenAPI가 모든 프로필에서 인증 없이 공개되어 있던 문제
+
+- **상황**: 워크스페이스/태스크 보완 작업(이름 수정 API, 초대 목록 조회 API, 응답 닉네임 embed) 완료 후 전체 브랜치 diff에 대한 최종 리뷰를 돌리던 중 발견. 이번 작업 범위는 아니었지만(springdoc-openapi Swagger 문서 추가는 그 이전 커밋에서 이미 들어간 상태) 리뷰 중 "이상한 게 있으면 알려달라"는 취지로 넓게 훑다가 걸림.
+- **원인**: `SecurityConfig`의 `PUBLIC_ENDPOINTS`에 `/v3/api-docs/**`, `/swagger-ui/**`, `/swagger-ui.html`이 프로필 구분 없이 `permitAll`로 등록되어 있었고, springdoc 자체를 끄거나 프로필별로 조건화할 방법이 어디에도 없었음. 즉 실제 배포 환경에 그대로 올라가면 인증 없이 전체 API 명세(모든 엔드포인트, 모든 DTO 필드 구조)가 누구에게나 노출되는 구조. `application.yaml`에 이미 actuator에 대해서는 "로컬 전용, 실배포시 네트워크 격리/인증 반드시 추가"라는 주석이 있었는데, Swagger는 그런 주석이나 대비책 없이 추가된 것으로 보임.
+- **해결**: `application.yaml`에 `springdoc.api-docs.enabled`/`springdoc.swagger-ui.enabled`를 `${SWAGGER_ENABLED:false}`로 설정해서 기본값을 "꺼짐"으로 바꿈(secure-by-default) — 환경변수 하나로 로컬에서만 켤 수 있게 함. springdoc 자체가 꺼지면 해당 엔드포인트가 아예 등록되지 않아 `SecurityConfig`의 `permitAll` 여부와 무관하게 404가 남. 다만 이렇게 하면 테스트 프로필에서 Swagger 접근 가능을 검증하던 기존 `SecurityConfigTest`(`apiDocsAreAccessibleWithoutAuth`, `swaggerUiIsAccessibleWithoutAuth`)가 깨지므로, `application-test.yaml`에 같은 프로퍼티를 `true`로 덮어써서 테스트 환경에서는 그대로 열려있도록 함.
+- **결과**: 배포 시 별도 설정 없이도 API 명세가 비공개로 시작하는 구조가 됨. 기존 테스트는 프로필 오버라이드로 그대로 통과. "새 기능 추가할 때 편의성 있는 문서화 도구(Swagger 등)를 붙이면서 보안 기본값을 놓치기 쉽다"는 걸 다시 확인한 사례 — actuator 때는 이미 주석으로 남겨뒀던 걸 Swagger 때는 놓쳤음.
+
+---
