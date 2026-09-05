@@ -43,6 +43,10 @@ public class Workspace {
         this.deletedAt = LocalDateTime.now();
     }
 
+    public void rename(String name) {
+        this.name = name;
+    }
+
     public boolean isDeleted() {
         return this.deletedAt != null;
     }

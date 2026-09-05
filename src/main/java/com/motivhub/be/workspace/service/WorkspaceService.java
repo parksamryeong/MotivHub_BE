@@ -67,6 +67,14 @@ public class WorkspaceService {
     }
 
     @Transactional
+    public WorkspaceResponse updateName(Long userId, Long workspaceId, String name) {
+        requireOwner(workspaceId, userId);
+        Workspace workspace = getWorkspace(workspaceId);
+        workspace.rename(name);
+        return WorkspaceResponse.of(workspace, WorkspaceRole.OWNER);
+    }
+
+    @Transactional
     public void delete(Long userId, Long workspaceId) {
         requireOwner(workspaceId, userId);
         getWorkspace(workspaceId).delete();

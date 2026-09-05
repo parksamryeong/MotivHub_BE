@@ -3,6 +3,7 @@ package com.motivhub.be.workspace.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -16,6 +17,7 @@ import com.motivhub.be.user.repository.UserRepository;
 import com.motivhub.be.workspace.dto.TransferOwnershipRequest;
 import com.motivhub.be.workspace.dto.WorkspaceCreateRequest;
 import com.motivhub.be.workspace.dto.WorkspaceResponse;
+import com.motivhub.be.workspace.dto.WorkspaceUpdateRequest;
 import com.motivhub.be.workspace.service.WorkspaceService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -84,6 +86,32 @@ class WorkspaceControllerTest extends AbstractIntegrationTest {
 
         mockMvc.perform(delete("/api/workspaces/{id}", workspace.id())
                         .header("Authorization", "Bearer " + tokenFor(member)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void renamesWorkspaceAsOwner() throws Exception {
+        User owner = newUser("c5");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "이름수정 전");
+
+        mockMvc.perform(patch("/api/workspaces/{id}", workspace.id())
+                        .header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new WorkspaceUpdateRequest("이름수정 후"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("이름수정 후"));
+    }
+
+    @Test
+    void returns403WhenNonOwnerTriesToRename() throws Exception {
+        User owner = newUser("c6-owner");
+        User member = newUser("c6-member");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "워크스페이스6");
+
+        mockMvc.perform(patch("/api/workspaces/{id}", workspace.id())
+                        .header("Authorization", "Bearer " + tokenFor(member))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new WorkspaceUpdateRequest("몰래 변경"))))
                 .andExpect(status().isForbidden());
     }
 }

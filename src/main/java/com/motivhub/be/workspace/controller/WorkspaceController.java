@@ -3,6 +3,7 @@ package com.motivhub.be.workspace.controller;
 import com.motivhub.be.workspace.dto.TransferOwnershipRequest;
 import com.motivhub.be.workspace.dto.WorkspaceCreateRequest;
 import com.motivhub.be.workspace.dto.WorkspaceResponse;
+import com.motivhub.be.workspace.dto.WorkspaceUpdateRequest;
 import com.motivhub.be.workspace.service.WorkspaceService;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -10,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -30,6 +32,13 @@ public class WorkspaceController {
     public ResponseEntity<WorkspaceResponse> create(
             @AuthenticationPrincipal Long userId, @Valid @RequestBody WorkspaceCreateRequest request) {
         return ResponseEntity.ok(workspaceService.create(userId, request.name()));
+    }
+
+    @PatchMapping("/{id}")
+    public ResponseEntity<WorkspaceResponse> updateName(
+            @AuthenticationPrincipal Long userId, @PathVariable Long id,
+            @Valid @RequestBody WorkspaceUpdateRequest request) {
+        return ResponseEntity.ok(workspaceService.updateName(userId, id, request.name()));
     }
 
     @GetMapping

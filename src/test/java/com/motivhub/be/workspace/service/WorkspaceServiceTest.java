@@ -215,4 +215,25 @@ class WorkspaceServiceTest extends AbstractIntegrationTest {
 
         assertThat(workspaceService.listMine(owner.getId())).isEmpty();
     }
+
+    @Test
+    void ownerCanRenameWorkspace() {
+        User owner = newUser("rename-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "원래 이름");
+
+        WorkspaceResponse renamed = workspaceService.updateName(owner.getId(), workspace.id(), "바뀐 이름");
+
+        assertThat(renamed.name()).isEqualTo("바뀐 이름");
+    }
+
+    @Test
+    void nonOwnerCannotRenameWorkspace() {
+        User owner = newUser("rename-owner2");
+        User member = newUser("rename-member2");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "이름 워크스페이스");
+        joinAsMember(workspace.id(), member);
+
+        assertThatThrownBy(() -> workspaceService.updateName(member.getId(), workspace.id(), "몰래 변경"))
+                .isInstanceOf(NotWorkspaceOwnerException.class);
+    }
 }
