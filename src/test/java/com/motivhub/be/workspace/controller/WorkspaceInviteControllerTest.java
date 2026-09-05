@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doNothing;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -73,5 +74,21 @@ class WorkspaceInviteControllerTest extends AbstractIntegrationTest {
                         .header("Authorization", "Bearer " + tokenFor(joiner)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.myRole").value("MEMBER"));
+    }
+
+    @Test
+    void listsActiveInvitesAsOwner() throws Exception {
+        User owner = newUser("ic3");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "초대목록 API 테스트");
+        mockMvc.perform(post("/api/workspaces/{id}/invites", workspace.id())
+                        .header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new WorkspaceInviteCreateRequest(null))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/workspaces/{id}/invites", workspace.id())
+                        .header("Authorization", "Bearer " + tokenFor(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1));
     }
 }

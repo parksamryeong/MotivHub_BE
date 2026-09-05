@@ -15,6 +15,7 @@ import com.motivhub.be.workspace.exception.InviteRevokedException;
 import com.motivhub.be.workspace.repository.WorkspaceInviteRepository;
 import com.motivhub.be.workspace.repository.WorkspaceMemberRepository;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -64,6 +65,14 @@ public class WorkspaceInviteService {
                 .filter(i -> i.getWorkspace().getId().equals(workspaceId))
                 .orElseThrow(() -> new InvalidInviteTokenException("존재하지 않는 초대입니다."));
         invite.revoke();
+    }
+
+    public List<WorkspaceInviteResponse> listInvites(Long ownerUserId, Long workspaceId) {
+        workspaceService.requireOwner(workspaceId, ownerUserId);
+        return workspaceInviteRepository
+                .findByWorkspaceIdAndRevokedAtIsNullAndExpiresAtAfter(workspaceId, LocalDateTime.now()).stream()
+                .map(WorkspaceInviteResponse::from)
+                .toList();
     }
 
     @Transactional

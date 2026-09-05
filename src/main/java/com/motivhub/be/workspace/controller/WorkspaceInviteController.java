@@ -5,9 +5,11 @@ import com.motivhub.be.workspace.dto.WorkspaceInviteResponse;
 import com.motivhub.be.workspace.dto.WorkspaceResponse;
 import com.motivhub.be.workspace.service.WorkspaceInviteService;
 import jakarta.validation.Valid;
+import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -28,6 +30,12 @@ public class WorkspaceInviteController {
             @AuthenticationPrincipal Long userId, @PathVariable Long id,
             @Valid @RequestBody WorkspaceInviteCreateRequest request) {
         return ResponseEntity.ok(workspaceInviteService.createInvite(userId, id, request.email()));
+    }
+
+    @GetMapping("/api/workspaces/{id}/invites")
+    public ResponseEntity<List<WorkspaceInviteResponse>> listInvites(
+            @AuthenticationPrincipal Long userId, @PathVariable Long id) {
+        return ResponseEntity.ok(workspaceInviteService.listInvites(userId, id));
     }
 
     @DeleteMapping("/api/workspaces/{id}/invites/{inviteId}")

@@ -20,6 +20,7 @@ import com.motivhub.be.workspace.exception.InvalidInviteTokenException;
 import com.motivhub.be.workspace.exception.InviteRevokedException;
 import com.motivhub.be.workspace.exception.NotWorkspaceOwnerException;
 import com.motivhub.be.workspace.repository.WorkspaceMemberRepository;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -149,5 +150,40 @@ class WorkspaceInviteServiceTest extends AbstractIntegrationTest {
 
         assertThatThrownBy(() -> workspaceInviteService.accept(joiner.getId(), invite.token()))
                 .isInstanceOf(com.motivhub.be.workspace.exception.WorkspaceNotFoundException.class);
+    }
+
+    @Test
+    void listInvitesReturnsOnlyActiveOnes() {
+        User owner = newUser("list-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "초대목록 워크스페이스");
+        WorkspaceInviteResponse active = workspaceInviteService.createInvite(owner.getId(), workspace.id(), null);
+        WorkspaceInviteResponse toRevoke = workspaceInviteService.createInvite(owner.getId(), workspace.id(), null);
+        workspaceInviteService.revokeInvite(owner.getId(), workspace.id(), toRevoke.id());
+
+        List<WorkspaceInviteResponse> invites = workspaceInviteService.listInvites(owner.getId(), workspace.id());
+
+        assertThat(invites).extracting(WorkspaceInviteResponse::id).containsExactly(active.id());
+    }
+
+    @Test
+    void listInvitesDoesNotLeakOtherWorkspaceInvites() {
+        User ownerA = newUser("list-ownerA");
+        User ownerB = newUser("list-ownerB");
+        WorkspaceResponse workspaceA = workspaceService.create(ownerA.getId(), "초대목록 워크스페이스A");
+        WorkspaceResponse workspaceB = workspaceService.create(ownerB.getId(), "초대목록 워크스페이스B");
+        workspaceInviteService.createInvite(ownerB.getId(), workspaceB.id(), null);
+
+        assertThat(workspaceInviteService.listInvites(ownerA.getId(), workspaceA.id())).isEmpty();
+    }
+
+    @Test
+    void nonOwnerCannotListInvites() {
+        User owner = newUser("list-owner2");
+        User member = newUser("list-member2");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "초대목록 워크스페이스2");
+        joinAsMember(workspace.id(), member);
+
+        assertThatThrownBy(() -> workspaceInviteService.listInvites(member.getId(), workspace.id()))
+                .isInstanceOf(NotWorkspaceOwnerException.class);
     }
 }
