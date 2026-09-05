@@ -6,6 +6,7 @@ import com.motivhub.be.user.repository.UserRepository;
 import com.motivhub.be.workspace.domain.Workspace;
 import com.motivhub.be.workspace.domain.WorkspaceMember;
 import com.motivhub.be.workspace.domain.WorkspaceRole;
+import com.motivhub.be.workspace.dto.WorkspaceDetailResponse;
 import com.motivhub.be.workspace.dto.WorkspaceResponse;
 import com.motivhub.be.workspace.exception.NotWorkspaceMemberException;
 import com.motivhub.be.workspace.exception.NotWorkspaceOwnerException;
@@ -49,9 +50,10 @@ public class WorkspaceService {
                 .toList();
     }
 
-    public WorkspaceResponse getDetail(Long userId, Long workspaceId) {
+    public WorkspaceDetailResponse getDetail(Long userId, Long workspaceId) {
         WorkspaceMember member = getMembership(workspaceId, userId);
-        return WorkspaceResponse.of(member.getWorkspace(), member.getRole());
+        List<WorkspaceMember> members = workspaceMemberRepository.findByWorkspaceId(workspaceId);
+        return WorkspaceDetailResponse.of(member.getWorkspace(), member.getRole(), members);
     }
 
     public Workspace getWorkspace(Long workspaceId) {

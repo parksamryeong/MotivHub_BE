@@ -6,10 +6,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.motivhub.be.support.AbstractIntegrationTest;
 import com.motivhub.be.user.domain.SocialProvider;
 import com.motivhub.be.user.domain.User;
+import com.motivhub.be.user.dto.UserSummary;
 import com.motivhub.be.user.repository.UserRepository;
 import com.motivhub.be.workspace.domain.Workspace;
 import com.motivhub.be.workspace.domain.WorkspaceMember;
 import com.motivhub.be.workspace.domain.WorkspaceRole;
+import com.motivhub.be.workspace.dto.WorkspaceDetailResponse;
 import com.motivhub.be.workspace.dto.WorkspaceResponse;
 import com.motivhub.be.workspace.exception.NotWorkspaceMemberException;
 import com.motivhub.be.workspace.exception.NotWorkspaceOwnerException;
@@ -235,5 +237,18 @@ class WorkspaceServiceTest extends AbstractIntegrationTest {
 
         assertThatThrownBy(() -> workspaceService.updateName(member.getId(), workspace.id(), "몰래 변경"))
                 .isInstanceOf(NotWorkspaceOwnerException.class);
+    }
+
+    @Test
+    void getDetailIncludesMemberNicknames() {
+        User owner = newUser("detail-owner");
+        User member = newUser("detail-member");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "멤버목록 워크스페이스");
+        joinAsMember(workspace.id(), member);
+
+        WorkspaceDetailResponse detail = workspaceService.getDetail(owner.getId(), workspace.id());
+
+        assertThat(detail.members()).extracting(m -> m.user().nickname())
+                .containsExactlyInAnyOrder(owner.getNickname(), member.getNickname());
     }
 }

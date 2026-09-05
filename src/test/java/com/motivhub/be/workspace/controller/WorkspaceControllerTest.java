@@ -16,6 +16,7 @@ import com.motivhub.be.user.domain.User;
 import com.motivhub.be.user.repository.UserRepository;
 import com.motivhub.be.workspace.dto.TransferOwnershipRequest;
 import com.motivhub.be.workspace.dto.WorkspaceCreateRequest;
+import com.motivhub.be.workspace.dto.WorkspaceDetailResponse;
 import com.motivhub.be.workspace.dto.WorkspaceResponse;
 import com.motivhub.be.workspace.dto.WorkspaceUpdateRequest;
 import com.motivhub.be.workspace.service.WorkspaceService;
@@ -113,5 +114,18 @@ class WorkspaceControllerTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new WorkspaceUpdateRequest("몰래 변경"))))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void getDetailReturnsMembersWithNicknames() throws Exception {
+        User owner = newUser("c7-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "상세 워크스페이스7");
+
+        mockMvc.perform(get("/api/workspaces/{id}", workspace.id())
+                        .header("Authorization", "Bearer " + tokenFor(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.members.length()").value(1))
+                .andExpect(jsonPath("$.members[0].user.nickname").value(owner.getNickname()))
+                .andExpect(jsonPath("$.members[0].role").value("OWNER"));
     }
 }

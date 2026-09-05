@@ -2,6 +2,7 @@ package com.motivhub.be.workspace.controller;
 
 import com.motivhub.be.workspace.dto.TransferOwnershipRequest;
 import com.motivhub.be.workspace.dto.WorkspaceCreateRequest;
+import com.motivhub.be.workspace.dto.WorkspaceDetailResponse;
 import com.motivhub.be.workspace.dto.WorkspaceResponse;
 import com.motivhub.be.workspace.dto.WorkspaceUpdateRequest;
 import com.motivhub.be.workspace.service.WorkspaceService;
@@ -47,7 +48,7 @@ public class WorkspaceController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<WorkspaceResponse> getDetail(
+    public ResponseEntity<WorkspaceDetailResponse> getDetail(
             @AuthenticationPrincipal Long userId, @PathVariable Long id) {
         return ResponseEntity.ok(workspaceService.getDetail(userId, id));
     }
