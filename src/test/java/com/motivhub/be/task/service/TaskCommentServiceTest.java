@@ -9,6 +9,7 @@ import com.motivhub.be.task.dto.TaskCreateRequest;
 import com.motivhub.be.task.dto.TaskResponse;
 import com.motivhub.be.user.domain.SocialProvider;
 import com.motivhub.be.user.domain.User;
+import com.motivhub.be.user.dto.UserSummary;
 import com.motivhub.be.user.repository.UserRepository;
 import com.motivhub.be.workspace.domain.Workspace;
 import com.motivhub.be.workspace.domain.WorkspaceMember;
@@ -79,5 +80,32 @@ class TaskCommentServiceTest extends AbstractIntegrationTest {
 
         assertThatThrownBy(() -> taskCommentService.create(outsider.getId(), task.id(), "몰래 댓글"))
                 .isInstanceOf(NotWorkspaceMemberException.class);
+    }
+
+    @Test
+    void commentIncludesAuthorNickname() {
+        User owner = newUser("comment-owner4");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "댓글 닉네임 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("댓글 닉네임 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+
+        TaskCommentResponse comment = taskCommentService.create(owner.getId(), task.id(), "닉네임 확인용 댓글");
+
+        assertThat(comment.author().nickname()).isEqualTo(owner.getNickname());
+    }
+
+    @Test
+    void withdrawnAuthorStillShowsMaskedNicknameInCommentList() {
+        User owner = newUser("comment-owner5");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "탈퇴 댓글 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("탈퇴 댓글 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+        taskCommentService.create(owner.getId(), task.id(), "탈퇴 전 댓글");
+        owner.withdraw();
+        userRepository.save(owner);
+
+        List<TaskCommentResponse> comments = taskCommentService.list(owner.getId(), task.id());
+
+        assertThat(comments.get(0).author().nickname()).startsWith("탈퇴한 사용자_");
     }
 }
