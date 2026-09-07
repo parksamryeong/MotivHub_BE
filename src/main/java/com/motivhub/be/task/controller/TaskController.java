@@ -2,12 +2,15 @@ package com.motivhub.be.task.controller;
 
 import com.motivhub.be.task.dto.TaskActivityLogResponse;
 import com.motivhub.be.task.dto.TaskAssigneeRequest;
+import com.motivhub.be.task.dto.TaskChecklistItemResponse;
 import com.motivhub.be.task.dto.TaskContentUpdateRequest;
 import com.motivhub.be.task.dto.TaskCreateRequest;
+import com.motivhub.be.task.dto.TaskDetailResponse;
 import com.motivhub.be.task.dto.TaskPeriodUpdateRequest;
 import com.motivhub.be.task.dto.TaskResponse;
 import com.motivhub.be.task.dto.TaskStatusUpdateRequest;
 import com.motivhub.be.task.service.TaskActivityLogService;
+import com.motivhub.be.task.service.TaskChecklistItemService;
 import com.motivhub.be.task.service.TaskService;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -26,10 +29,13 @@ public class TaskController {
 
     private final TaskService taskService;
     private final TaskActivityLogService taskActivityLogService;
+    private final TaskChecklistItemService taskChecklistItemService;
 
-    public TaskController(TaskService taskService, TaskActivityLogService taskActivityLogService) {
+    public TaskController(TaskService taskService, TaskActivityLogService taskActivityLogService,
+                         TaskChecklistItemService taskChecklistItemService) {
         this.taskService = taskService;
         this.taskActivityLogService = taskActivityLogService;
+        this.taskChecklistItemService = taskChecklistItemService;
     }
 
     @PostMapping("/api/workspaces/{workspaceId}/tasks")
@@ -46,8 +52,10 @@ public class TaskController {
     }
 
     @GetMapping("/api/tasks/{id}")
-    public ResponseEntity<TaskResponse> getDetail(@AuthenticationPrincipal Long userId, @PathVariable Long id) {
-        return ResponseEntity.ok(taskService.getDetail(userId, id));
+    public ResponseEntity<TaskDetailResponse> getDetail(@AuthenticationPrincipal Long userId, @PathVariable Long id) {
+        TaskResponse task = taskService.getDetail(userId, id);
+        List<TaskChecklistItemResponse> checklistItems = taskChecklistItemService.list(userId, id);
+        return ResponseEntity.ok(TaskDetailResponse.of(task, checklistItems));
     }
 
     @PatchMapping("/api/tasks/{id}")

@@ -44,7 +44,7 @@ class TaskActivityLogServiceTest extends AbstractIntegrationTest {
 
         List<TaskActivityLogResponse> activities = taskActivityLogService.list(owner.getId(), taskResponse.id());
 
-        assertThat(activities).hasSize(1);
+        assertThat(activities).hasSize(2);
         assertThat(activities.get(0).action()).isEqualTo(TaskActivityAction.UPDATE_CONTENT);
         assertThat(activities.get(0).field()).isEqualTo("name");
         assertThat(activities.get(0).oldValue()).isEqualTo("이전 이름");
@@ -65,7 +65,7 @@ class TaskActivityLogServiceTest extends AbstractIntegrationTest {
 
         List<TaskActivityLogResponse> activities = taskActivityLogService.list(owner.getId(), taskResponse.id());
 
-        assertThat(activities).extracting(TaskActivityLogResponse::newValue).containsExactly("C", "B");
+        assertThat(activities).extracting(TaskActivityLogResponse::newValue).containsExactly("C", "B", null);
     }
 
     @Test

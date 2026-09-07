@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.motivhub.be.auth.jwt.JwtProvider;
 import com.motivhub.be.support.AbstractIntegrationTest;
 import com.motivhub.be.task.domain.TaskStatus;
+import com.motivhub.be.task.dto.TaskChecklistItemCreateRequest;
 import com.motivhub.be.task.dto.TaskCreateRequest;
 import com.motivhub.be.task.dto.TaskPeriodUpdateRequest;
 import com.motivhub.be.task.dto.TaskResponse;
@@ -148,5 +149,30 @@ class TaskControllerTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$[0].newValue").value("IN_PROGRESS"))
                 .andExpect(jsonPath("$[0].actor.nickname").value(owner.getNickname()))
                 .andExpect(jsonPath("$[1].action").value("CREATE"));
+    }
+
+    @Test
+    void getDetailIncludesChecklistItems() throws Exception {
+        User owner = newUser("t5-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "상세 체크리스트 워크스페이스");
+        String createResponse = mockMvc.perform(post("/api/workspaces/{id}/tasks", workspace.id())
+                        .header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new TaskCreateRequest("상세 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()))))
+                .andReturn().getResponse().getContentAsString();
+        Long taskId = objectMapper.readTree(createResponse).get("id").asLong();
+        mockMvc.perform(post("/api/tasks/{taskId}/checklist-items", taskId)
+                        .header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new TaskChecklistItemCreateRequest("상세 확인용 항목"))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/tasks/{id}", taskId)
+                        .header("Authorization", "Bearer " + tokenFor(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.checklistItems.length()").value(1))
+                .andExpect(jsonPath("$.checklistItems[0].content").value("상세 확인용 항목"))
+                .andExpect(jsonPath("$.checklistItems[0].isDone").value(false));
     }
 }
