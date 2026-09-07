@@ -4,6 +4,7 @@ import com.motivhub.be.auth.exception.InvalidCodeException;
 import com.motivhub.be.auth.exception.InvalidRefreshTokenException;
 import com.motivhub.be.auth.exception.LogoutForbiddenException;
 import com.motivhub.be.task.exception.InvalidTaskStatusTransitionException;
+import com.motivhub.be.task.exception.TaskChecklistItemNotFoundException;
 import com.motivhub.be.task.exception.TaskEditForbiddenException;
 import com.motivhub.be.task.exception.TaskNotFoundException;
 import com.motivhub.be.task.exception.TaskPeriodEditForbiddenException;
@@ -142,5 +143,11 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleInvalidTaskStatusTransition(InvalidTaskStatusTransitionException e) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ErrorResponse.of("INVALID_TASK_STATUS_TRANSITION", e.getMessage()));
+    }
+
+    @ExceptionHandler(TaskChecklistItemNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleTaskChecklistItemNotFound(TaskChecklistItemNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("TASK_CHECKLIST_ITEM_NOT_FOUND", e.getMessage()));
     }
 }

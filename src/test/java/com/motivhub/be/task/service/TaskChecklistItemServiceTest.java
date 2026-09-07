@@ -83,4 +83,58 @@ class TaskChecklistItemServiceTest extends AbstractIntegrationTest {
 
         assertThat(item.content()).isEqualTo("담당자가 추가");
     }
+
+    @Test
+    void updatingContentOnlyKeepsDoneFlag() {
+        User owner = newUser("owner4");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "체크리스트 수정 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("수정 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+        TaskChecklistItemResponse created = taskChecklistItemService.create(owner.getId(), task.id(), "원래 내용");
+
+        TaskChecklistItemResponse updated = taskChecklistItemService.update(
+                owner.getId(), task.id(), created.id(), "바뀐 내용", null);
+
+        assertThat(updated.content()).isEqualTo("바뀐 내용");
+        assertThat(updated.isDone()).isFalse();
+    }
+
+    @Test
+    void togglingDoneOnlyKeepsContent() {
+        User owner = newUser("owner5");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "체크리스트 토글 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("토글 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+        TaskChecklistItemResponse created = taskChecklistItemService.create(owner.getId(), task.id(), "토글 내용");
+
+        TaskChecklistItemResponse updated = taskChecklistItemService.update(
+                owner.getId(), task.id(), created.id(), null, true);
+
+        assertThat(updated.content()).isEqualTo("토글 내용");
+        assertThat(updated.isDone()).isTrue();
+    }
+
+    @Test
+    void deletingItemRemovesItFromList() {
+        User owner = newUser("owner6");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "체크리스트 삭제 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("삭제 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+        TaskChecklistItemResponse created = taskChecklistItemService.create(owner.getId(), task.id(), "삭제될 항목");
+
+        taskChecklistItemService.delete(owner.getId(), task.id(), created.id());
+
+        assertThat(taskChecklistItemService.list(owner.getId(), task.id())).isEmpty();
+    }
+
+    @Test
+    void updatingUnknownItemThrows() {
+        User owner = newUser("owner7");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "체크리스트 미존재 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("미존재 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+
+        assertThatThrownBy(() -> taskChecklistItemService.update(owner.getId(), task.id(), 999_999L, "x", null))
+                .isInstanceOf(com.motivhub.be.task.exception.TaskChecklistItemNotFoundException.class);
+    }
 }

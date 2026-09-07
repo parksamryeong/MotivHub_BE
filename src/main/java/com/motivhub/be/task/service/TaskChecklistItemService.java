@@ -3,6 +3,7 @@ package com.motivhub.be.task.service;
 import com.motivhub.be.task.domain.Task;
 import com.motivhub.be.task.domain.TaskChecklistItem;
 import com.motivhub.be.task.dto.TaskChecklistItemResponse;
+import com.motivhub.be.task.exception.TaskChecklistItemNotFoundException;
 import com.motivhub.be.task.repository.TaskChecklistItemRepository;
 import com.motivhub.be.workspace.service.WorkspaceService;
 import java.util.List;
@@ -41,5 +42,32 @@ public class TaskChecklistItemService {
         return taskChecklistItemRepository.findByTaskIdOrderByOrderIndexAsc(taskId).stream()
                 .map(TaskChecklistItemResponse::from)
                 .toList();
+    }
+
+    @Transactional
+    public TaskChecklistItemResponse update(Long userId, Long taskId, Long itemId, String content, Boolean isDone) {
+        Task task = taskService.getTask(taskId);
+        taskAccessPolicy.requireEditPermission(task, userId);
+        TaskChecklistItem item = findItem(taskId, itemId);
+        if (content != null) {
+            item.updateContent(content);
+        }
+        if (isDone != null) {
+            item.markDone(isDone);
+        }
+        return TaskChecklistItemResponse.from(item);
+    }
+
+    @Transactional
+    public void delete(Long userId, Long taskId, Long itemId) {
+        Task task = taskService.getTask(taskId);
+        taskAccessPolicy.requireEditPermission(task, userId);
+        taskChecklistItemRepository.delete(findItem(taskId, itemId));
+    }
+
+    private TaskChecklistItem findItem(Long taskId, Long itemId) {
+        return taskChecklistItemRepository.findById(itemId)
+                .filter(item -> item.getTask().getId().equals(taskId))
+                .orElseThrow(() -> new TaskChecklistItemNotFoundException("체크리스트 항목을 찾을 수 없습니다."));
     }
 }

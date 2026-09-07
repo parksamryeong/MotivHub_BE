@@ -9,6 +9,7 @@ import com.motivhub.be.task.exception.TaskNotFoundException;
 import com.motivhub.be.task.exception.TaskPeriodEditForbiddenException;
 import com.motivhub.be.task.repository.TaskActivityLogRepository;
 import com.motivhub.be.task.repository.TaskAssigneeRepository;
+import com.motivhub.be.task.repository.TaskChecklistItemRepository;
 import com.motivhub.be.task.repository.TaskCommentRepository;
 import com.motivhub.be.task.repository.TaskRepository;
 import com.motivhub.be.task.domain.TaskAssignee;
@@ -36,6 +37,7 @@ public class TaskService {
 
     private final TaskRepository taskRepository;
     private final TaskAssigneeRepository taskAssigneeRepository;
+    private final TaskChecklistItemRepository taskChecklistItemRepository;
     private final TaskCommentRepository taskCommentRepository;
     private final TaskActivityLogRepository taskActivityLogRepository;
     private final UserRepository userRepository;
@@ -44,11 +46,13 @@ public class TaskService {
     private final TaskAccessPolicy taskAccessPolicy;
 
     public TaskService(TaskRepository taskRepository, TaskAssigneeRepository taskAssigneeRepository,
+                        TaskChecklistItemRepository taskChecklistItemRepository,
                         TaskCommentRepository taskCommentRepository, TaskActivityLogRepository taskActivityLogRepository,
                         UserRepository userRepository, WorkspaceService workspaceService,
                         TaskActivityLogService taskActivityLogService, TaskAccessPolicy taskAccessPolicy) {
         this.taskRepository = taskRepository;
         this.taskAssigneeRepository = taskAssigneeRepository;
+        this.taskChecklistItemRepository = taskChecklistItemRepository;
         this.taskCommentRepository = taskCommentRepository;
         this.taskActivityLogRepository = taskActivityLogRepository;
         this.userRepository = userRepository;
@@ -157,6 +161,7 @@ public class TaskService {
         taskAssigneeRepository.deleteByTaskId(taskId);
         taskCommentRepository.deleteByTaskId(taskId);
         taskActivityLogRepository.deleteByTaskId(taskId);
+        taskChecklistItemRepository.deleteByTaskId(taskId);
         taskRepository.delete(task);
     }
 

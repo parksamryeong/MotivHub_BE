@@ -16,6 +16,7 @@ import com.motivhub.be.task.exception.TaskPeriodEditForbiddenException;
 import com.motivhub.be.task.domain.TaskComment;
 import com.motivhub.be.task.repository.TaskActivityLogRepository;
 import com.motivhub.be.task.repository.TaskAssigneeRepository;
+import com.motivhub.be.task.repository.TaskChecklistItemRepository;
 import com.motivhub.be.task.repository.TaskCommentRepository;
 import com.motivhub.be.user.domain.SocialProvider;
 import com.motivhub.be.user.domain.User;
@@ -36,10 +37,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 class TaskServiceTest extends AbstractIntegrationTest {
 
     @Autowired private TaskService taskService;
+    @Autowired private TaskChecklistItemService taskChecklistItemService;
     @Autowired private WorkspaceService workspaceService;
     @Autowired private UserRepository userRepository;
     @Autowired private WorkspaceMemberRepository workspaceMemberRepository;
     @Autowired private TaskAssigneeRepository taskAssigneeRepository;
+    @Autowired private TaskChecklistItemRepository taskChecklistItemRepository;
     @Autowired private TaskCommentRepository taskCommentRepository;
     @Autowired private TaskActivityLogRepository taskActivityLogRepository;
     @Autowired private TaskExpirationScheduler taskExpirationScheduler;
@@ -400,5 +403,18 @@ class TaskServiceTest extends AbstractIntegrationTest {
         taskService.delete(owner.getId(), task.id());
 
         assertThat(taskActivityLogRepository.findByTaskIdOrderByCreatedAtDesc(task.id())).isEmpty();
+    }
+
+    @Test
+    void deletingTaskAlsoDeletesChecklistItems() {
+        User owner = newUser("checklist-delete-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "체크리스트 삭제 캐스케이드 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("삭제될 체크리스트 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+        taskChecklistItemService.create(owner.getId(), task.id(), "삭제될 항목");
+
+        taskService.delete(owner.getId(), task.id());
+
+        assertThat(taskChecklistItemRepository.findByTaskIdOrderByOrderIndexAsc(task.id())).isEmpty();
     }
 }
