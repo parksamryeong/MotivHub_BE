@@ -1,11 +1,13 @@
 package com.motivhub.be.task.service;
 
 import com.motivhub.be.task.domain.Task;
+import com.motivhub.be.task.domain.TaskActivityAction;
 import com.motivhub.be.task.dto.TaskCreateRequest;
 import com.motivhub.be.task.dto.TaskResponse;
 import com.motivhub.be.task.exception.TaskEditForbiddenException;
 import com.motivhub.be.task.exception.TaskNotFoundException;
 import com.motivhub.be.task.exception.TaskPeriodEditForbiddenException;
+import com.motivhub.be.task.repository.TaskActivityLogRepository;
 import com.motivhub.be.task.repository.TaskAssigneeRepository;
 import com.motivhub.be.task.repository.TaskCommentRepository;
 import com.motivhub.be.task.repository.TaskRepository;
@@ -23,6 +25,7 @@ import com.motivhub.be.workspace.service.WorkspaceService;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,17 +37,22 @@ public class TaskService {
     private final TaskRepository taskRepository;
     private final TaskAssigneeRepository taskAssigneeRepository;
     private final TaskCommentRepository taskCommentRepository;
+    private final TaskActivityLogRepository taskActivityLogRepository;
     private final UserRepository userRepository;
     private final WorkspaceService workspaceService;
+    private final TaskActivityLogService taskActivityLogService;
 
     public TaskService(TaskRepository taskRepository, TaskAssigneeRepository taskAssigneeRepository,
-                        TaskCommentRepository taskCommentRepository, UserRepository userRepository,
-                        WorkspaceService workspaceService) {
+                        TaskCommentRepository taskCommentRepository, TaskActivityLogRepository taskActivityLogRepository,
+                        UserRepository userRepository, WorkspaceService workspaceService,
+                        TaskActivityLogService taskActivityLogService) {
         this.taskRepository = taskRepository;
         this.taskAssigneeRepository = taskAssigneeRepository;
         this.taskCommentRepository = taskCommentRepository;
+        this.taskActivityLogRepository = taskActivityLogRepository;
         this.userRepository = userRepository;
         this.workspaceService = workspaceService;
+        this.taskActivityLogService = taskActivityLogService;
     }
 
     @Transactional
@@ -55,6 +63,7 @@ public class TaskService {
                 .orElseThrow(() -> new UserNotFoundException("유저를 찾을 수 없습니다."));
         Task task = taskRepository.save(Task.create(
                 workspace, request.name(), request.description(), request.startDate(), request.dueDate(), creator));
+        taskActivityLogService.record(task, creator, TaskActivityAction.CREATE, null, null, null);
 
         List<Long> assigneeIds = request.assigneeIds() == null ? List.of() : request.assigneeIds();
         for (Long assigneeId : assigneeIds) {
@@ -100,7 +109,18 @@ public class TaskService {
     public TaskResponse updateContent(Long userId, Long taskId, String name, String description) {
         Task task = getTask(taskId);
         requireAssigneeOrOwner(task, userId);
+        User actor = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException("유저를 찾을 수 없습니다."));
+        String oldName = task.getName();
+        String oldDescription = task.getDescription();
         task.updateContent(name, description);
+        if (!Objects.equals(oldName, task.getName())) {
+            taskActivityLogService.record(task, actor, TaskActivityAction.UPDATE_CONTENT, "name", oldName, task.getName());
+        }
+        if (!Objects.equals(oldDescription, task.getDescription())) {
+            taskActivityLogService.record(task, actor, TaskActivityAction.UPDATE_CONTENT,
+                    "description", oldDescription, task.getDescription());
+        }
         return TaskResponse.of(task, getAssigneeSummaries(taskId));
     }
 
@@ -112,7 +132,14 @@ public class TaskService {
         } catch (NotWorkspaceOwnerException e) {
             throw new TaskPeriodEditForbiddenException("태스크 기간 수정은 워크스페이스 OWNER만 가능합니다.");
         }
+        User actor = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException("유저를 찾을 수 없습니다."));
+        String oldPeriod = task.getStartDate() + "~" + task.getDueDate();
         task.updatePeriod(startDate, dueDate);
+        String newPeriod = task.getStartDate() + "~" + task.getDueDate();
+        if (!oldPeriod.equals(newPeriod)) {
+            taskActivityLogService.record(task, actor, TaskActivityAction.UPDATE_PERIOD, "period", oldPeriod, newPeriod);
+        }
         return TaskResponse.of(task, getAssigneeSummaries(taskId));
     }
 
@@ -127,6 +154,7 @@ public class TaskService {
         }
         taskAssigneeRepository.deleteByTaskId(taskId);
         taskCommentRepository.deleteByTaskId(taskId);
+        taskActivityLogRepository.deleteByTaskId(taskId);
         taskRepository.delete(task);
     }
 
@@ -137,7 +165,14 @@ public class TaskService {
         if (newStatus == TaskStatus.EXPIRED || task.getStatus() == TaskStatus.EXPIRED) {
             throw new InvalidTaskStatusTransitionException("만료 상태는 시스템(자동) 또는 기간 연장을 통해서만 변경됩니다.");
         }
+        User actor = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException("유저를 찾을 수 없습니다."));
+        TaskStatus oldStatus = task.getStatus();
         task.changeStatus(newStatus);
+        if (oldStatus != newStatus) {
+            taskActivityLogService.record(task, actor, TaskActivityAction.CHANGE_STATUS,
+                    "status", oldStatus.name(), newStatus.name());
+        }
         return TaskResponse.of(task, getAssigneeSummaries(taskId));
     }
 
@@ -150,6 +185,9 @@ public class TaskService {
             User target = userRepository.findById(targetUserId)
                     .orElseThrow(() -> new UserNotFoundException("유저를 찾을 수 없습니다."));
             taskAssigneeRepository.save(TaskAssignee.create(task, target));
+            User actor = userRepository.findById(userId)
+                    .orElseThrow(() -> new UserNotFoundException("유저를 찾을 수 없습니다."));
+            taskActivityLogService.record(task, actor, TaskActivityAction.ADD_ASSIGNEE, "assignee", null, target.getNickname());
         }
         return TaskResponse.of(task, getAssigneeSummaries(taskId));
     }
@@ -159,7 +197,13 @@ public class TaskService {
         Task task = getTask(taskId);
         requireAssigneeOrOwner(task, userId);
         taskAssigneeRepository.findByTaskIdAndUserId(taskId, targetUserId)
-                .ifPresent(taskAssigneeRepository::delete);
+                .ifPresent(assignee -> {
+                    taskAssigneeRepository.delete(assignee);
+                    User actor = userRepository.findById(userId)
+                            .orElseThrow(() -> new UserNotFoundException("유저를 찾을 수 없습니다."));
+                    taskActivityLogService.record(task, actor, TaskActivityAction.REMOVE_ASSIGNEE,
+                            "assignee", assignee.getUser().getNickname(), null);
+                });
         return TaskResponse.of(task, getAssigneeSummaries(taskId));
     }
 

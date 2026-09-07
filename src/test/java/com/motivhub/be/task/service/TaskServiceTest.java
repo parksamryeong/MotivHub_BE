@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.motivhub.be.support.AbstractIntegrationTest;
+import com.motivhub.be.task.domain.TaskActivityAction;
+import com.motivhub.be.task.domain.TaskActivityLog;
 import com.motivhub.be.task.dto.TaskCreateRequest;
 import com.motivhub.be.task.dto.TaskResponse;
 import com.motivhub.be.task.domain.TaskStatus;
@@ -12,6 +14,7 @@ import com.motivhub.be.task.exception.TaskEditForbiddenException;
 import com.motivhub.be.task.exception.TaskNotFoundException;
 import com.motivhub.be.task.exception.TaskPeriodEditForbiddenException;
 import com.motivhub.be.task.domain.TaskComment;
+import com.motivhub.be.task.repository.TaskActivityLogRepository;
 import com.motivhub.be.task.repository.TaskAssigneeRepository;
 import com.motivhub.be.task.repository.TaskCommentRepository;
 import com.motivhub.be.user.domain.SocialProvider;
@@ -38,6 +41,7 @@ class TaskServiceTest extends AbstractIntegrationTest {
     @Autowired private WorkspaceMemberRepository workspaceMemberRepository;
     @Autowired private TaskAssigneeRepository taskAssigneeRepository;
     @Autowired private TaskCommentRepository taskCommentRepository;
+    @Autowired private TaskActivityLogRepository taskActivityLogRepository;
     @Autowired private TaskExpirationScheduler taskExpirationScheduler;
 
     private User newUser(String suffix) {
@@ -306,5 +310,95 @@ class TaskServiceTest extends AbstractIntegrationTest {
 
         assertThat(detail.assignees()).extracting(UserSummary::nickname).containsExactly(assignee.getNickname());
         assertThat(detail.assignees().get(0).nickname()).startsWith("탈퇴한 사용자_");
+    }
+
+    @Test
+    void creatingTaskRecordsCreateActivityLog() {
+        User owner = newUser("activity-create-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "활동로그 생성 워크스페이스");
+
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("생성 활동 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+
+        List<TaskActivityLog> logs = taskActivityLogRepository.findByTaskIdOrderByCreatedAtDesc(task.id());
+        assertThat(logs).hasSize(1);
+        assertThat(logs.get(0).getAction()).isEqualTo(TaskActivityAction.CREATE);
+        assertThat(logs.get(0).getActor().getId()).isEqualTo(owner.getId());
+    }
+
+    @Test
+    void updatingNameRecordsActivityLog() {
+        User owner = newUser("activity-content-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "활동로그 내용 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("원래 이름", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+
+        taskService.updateContent(owner.getId(), task.id(), "바뀐 이름", null);
+
+        List<TaskActivityLog> logs = taskActivityLogRepository.findByTaskIdOrderByCreatedAtDesc(task.id());
+        assertThat(logs).extracting(TaskActivityLog::getAction)
+                .containsExactly(TaskActivityAction.UPDATE_CONTENT, TaskActivityAction.CREATE);
+        assertThat(logs.get(0).getField()).isEqualTo("name");
+        assertThat(logs.get(0).getOldValue()).isEqualTo("원래 이름");
+        assertThat(logs.get(0).getNewValue()).isEqualTo("바뀐 이름");
+    }
+
+    @Test
+    void updatingContentWithSameValuesRecordsNoAdditionalActivityLog() {
+        User owner = newUser("activity-noop-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "활동로그 무변경 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("동일 이름", "동일 설명", LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+
+        taskService.updateContent(owner.getId(), task.id(), "동일 이름", "동일 설명");
+
+        List<TaskActivityLog> logs = taskActivityLogRepository.findByTaskIdOrderByCreatedAtDesc(task.id());
+        assertThat(logs).extracting(TaskActivityLog::getAction).containsExactly(TaskActivityAction.CREATE);
+    }
+
+    @Test
+    void changingStatusRecordsActivityLog() {
+        User owner = newUser("activity-status-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "활동로그 상태 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("상태 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+
+        taskService.changeStatus(owner.getId(), task.id(), TaskStatus.IN_PROGRESS);
+
+        List<TaskActivityLog> logs = taskActivityLogRepository.findByTaskIdOrderByCreatedAtDesc(task.id());
+        assertThat(logs.get(0).getAction()).isEqualTo(TaskActivityAction.CHANGE_STATUS);
+        assertThat(logs.get(0).getOldValue()).isEqualTo("WAITING");
+        assertThat(logs.get(0).getNewValue()).isEqualTo("IN_PROGRESS");
+    }
+
+    @Test
+    void addingAndRemovingAssigneeRecordsActivityLog() {
+        User owner = newUser("activity-assignee-owner");
+        User newAssignee = newUser("activity-assignee-new");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "활동로그 담당자 워크스페이스");
+        joinAsMember(workspace.id(), newAssignee);
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("담당자 활동 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+
+        taskService.addAssignee(owner.getId(), task.id(), newAssignee.getId());
+        taskService.removeAssignee(owner.getId(), task.id(), newAssignee.getId());
+
+        List<TaskActivityLog> logs = taskActivityLogRepository.findByTaskIdOrderByCreatedAtDesc(task.id());
+        assertThat(logs).extracting(TaskActivityLog::getAction).containsExactly(
+                TaskActivityAction.REMOVE_ASSIGNEE, TaskActivityAction.ADD_ASSIGNEE, TaskActivityAction.CREATE);
+        assertThat(logs.get(1).getNewValue()).isEqualTo(newAssignee.getNickname());
+        assertThat(logs.get(0).getOldValue()).isEqualTo(newAssignee.getNickname());
+    }
+
+    @Test
+    void deletingTaskAlsoDeletesActivityLogs() {
+        User owner = newUser("activity-delete-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "활동로그 삭제 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("삭제될 활동 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+
+        taskService.delete(owner.getId(), task.id());
+
+        assertThat(taskActivityLogRepository.findByTaskIdOrderByCreatedAtDesc(task.id())).isEmpty();
     }
 }
