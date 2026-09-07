@@ -5,6 +5,8 @@ import com.motivhub.be.auth.exception.InvalidRefreshTokenException;
 import com.motivhub.be.auth.exception.LogoutForbiddenException;
 import com.motivhub.be.task.exception.InvalidTaskStatusTransitionException;
 import com.motivhub.be.task.exception.TaskChecklistItemNotFoundException;
+import com.motivhub.be.task.exception.TaskCommentForbiddenException;
+import com.motivhub.be.task.exception.TaskCommentNotFoundException;
 import com.motivhub.be.task.exception.TaskEditForbiddenException;
 import com.motivhub.be.task.exception.TaskNotFoundException;
 import com.motivhub.be.task.exception.TaskPeriodEditForbiddenException;
@@ -149,5 +151,17 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleTaskChecklistItemNotFound(TaskChecklistItemNotFoundException e) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(ErrorResponse.of("TASK_CHECKLIST_ITEM_NOT_FOUND", e.getMessage()));
+    }
+
+    @ExceptionHandler(TaskCommentNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleTaskCommentNotFound(TaskCommentNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("TASK_COMMENT_NOT_FOUND", e.getMessage()));
+    }
+
+    @ExceptionHandler(TaskCommentForbiddenException.class)
+    public ResponseEntity<ErrorResponse> handleTaskCommentForbidden(TaskCommentForbiddenException e) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(ErrorResponse.of("TASK_COMMENT_FORBIDDEN", e.getMessage()));
     }
 }
