@@ -9,9 +9,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.motivhub.be.auth.jwt.JwtProvider;
 import com.motivhub.be.support.AbstractIntegrationTest;
+import com.motivhub.be.task.domain.TaskStatus;
 import com.motivhub.be.task.dto.TaskCreateRequest;
 import com.motivhub.be.task.dto.TaskPeriodUpdateRequest;
 import com.motivhub.be.task.dto.TaskResponse;
+import com.motivhub.be.task.dto.TaskStatusUpdateRequest;
 import com.motivhub.be.user.domain.SocialProvider;
 import com.motivhub.be.user.domain.User;
 import com.motivhub.be.user.repository.UserRepository;
@@ -118,5 +120,33 @@ class TaskControllerTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].createdBy.nickname").value(owner.getNickname()))
                 .andExpect(jsonPath("$[0].assignees[0].nickname").value(assignee.getNickname()));
+    }
+
+    @Test
+    void listActivitiesReturnsRecordedChangesNewestFirst() throws Exception {
+        User owner = newUser("t4-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "활동로그 API 워크스페이스");
+        String createResponse = mockMvc.perform(post("/api/workspaces/{id}/tasks", workspace.id())
+                        .header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new TaskCreateRequest("활동로그 API 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()))))
+                .andReturn().getResponse().getContentAsString();
+        Long taskId = objectMapper.readTree(createResponse).get("id").asLong();
+
+        mockMvc.perform(patch("/api/tasks/{id}/status", taskId)
+                        .header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new TaskStatusUpdateRequest(TaskStatus.IN_PROGRESS))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/tasks/{id}/activities", taskId)
+                        .header("Authorization", "Bearer " + tokenFor(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].action").value("CHANGE_STATUS"))
+                .andExpect(jsonPath("$[0].newValue").value("IN_PROGRESS"))
+                .andExpect(jsonPath("$[0].actor.nickname").value(owner.getNickname()))
+                .andExpect(jsonPath("$[1].action").value("CREATE"));
     }
 }

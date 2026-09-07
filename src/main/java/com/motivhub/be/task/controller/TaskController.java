@@ -1,11 +1,13 @@
 package com.motivhub.be.task.controller;
 
+import com.motivhub.be.task.dto.TaskActivityLogResponse;
 import com.motivhub.be.task.dto.TaskAssigneeRequest;
 import com.motivhub.be.task.dto.TaskContentUpdateRequest;
 import com.motivhub.be.task.dto.TaskCreateRequest;
 import com.motivhub.be.task.dto.TaskPeriodUpdateRequest;
 import com.motivhub.be.task.dto.TaskResponse;
 import com.motivhub.be.task.dto.TaskStatusUpdateRequest;
+import com.motivhub.be.task.service.TaskActivityLogService;
 import com.motivhub.be.task.service.TaskService;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -23,9 +25,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class TaskController {
 
     private final TaskService taskService;
+    private final TaskActivityLogService taskActivityLogService;
 
-    public TaskController(TaskService taskService) {
+    public TaskController(TaskService taskService, TaskActivityLogService taskActivityLogService) {
         this.taskService = taskService;
+        this.taskActivityLogService = taskActivityLogService;
     }
 
     @PostMapping("/api/workspaces/{workspaceId}/tasks")
@@ -71,6 +75,12 @@ public class TaskController {
     public ResponseEntity<Void> delete(@AuthenticationPrincipal Long userId, @PathVariable Long id) {
         taskService.delete(userId, id);
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/api/tasks/{id}/activities")
+    public ResponseEntity<List<TaskActivityLogResponse>> listActivities(
+            @AuthenticationPrincipal Long userId, @PathVariable Long id) {
+        return ResponseEntity.ok(taskActivityLogService.list(userId, id));
     }
 
     @PostMapping("/api/tasks/{id}/assignees")
