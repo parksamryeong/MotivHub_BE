@@ -41,11 +41,12 @@ public class TaskService {
     private final UserRepository userRepository;
     private final WorkspaceService workspaceService;
     private final TaskActivityLogService taskActivityLogService;
+    private final TaskAccessPolicy taskAccessPolicy;
 
     public TaskService(TaskRepository taskRepository, TaskAssigneeRepository taskAssigneeRepository,
                         TaskCommentRepository taskCommentRepository, TaskActivityLogRepository taskActivityLogRepository,
                         UserRepository userRepository, WorkspaceService workspaceService,
-                        TaskActivityLogService taskActivityLogService) {
+                        TaskActivityLogService taskActivityLogService, TaskAccessPolicy taskAccessPolicy) {
         this.taskRepository = taskRepository;
         this.taskAssigneeRepository = taskAssigneeRepository;
         this.taskCommentRepository = taskCommentRepository;
@@ -53,6 +54,7 @@ public class TaskService {
         this.userRepository = userRepository;
         this.workspaceService = workspaceService;
         this.taskActivityLogService = taskActivityLogService;
+        this.taskAccessPolicy = taskAccessPolicy;
     }
 
     @Transactional
@@ -108,7 +110,7 @@ public class TaskService {
     @Transactional
     public TaskResponse updateContent(Long userId, Long taskId, String name, String description) {
         Task task = getTask(taskId);
-        requireAssigneeOrOwner(task, userId);
+        taskAccessPolicy.requireEditPermission(task, userId);
         User actor = userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException("유저를 찾을 수 없습니다."));
         String oldName = task.getName();
@@ -161,7 +163,7 @@ public class TaskService {
     @Transactional
     public TaskResponse changeStatus(Long userId, Long taskId, TaskStatus newStatus) {
         Task task = getTask(taskId);
-        requireAssigneeOrOwner(task, userId);
+        taskAccessPolicy.requireEditPermission(task, userId);
         if (newStatus == TaskStatus.EXPIRED || task.getStatus() == TaskStatus.EXPIRED) {
             throw new InvalidTaskStatusTransitionException("만료 상태는 시스템(자동) 또는 기간 연장을 통해서만 변경됩니다.");
         }
@@ -179,7 +181,7 @@ public class TaskService {
     @Transactional
     public TaskResponse addAssignee(Long userId, Long taskId, Long targetUserId) {
         Task task = getTask(taskId);
-        requireAssigneeOrOwner(task, userId);
+        taskAccessPolicy.requireEditPermission(task, userId);
         workspaceService.getMembership(task.getWorkspace().getId(), targetUserId);
         if (!taskAssigneeRepository.existsByTaskIdAndUserId(taskId, targetUserId)) {
             User target = userRepository.findById(targetUserId)
@@ -195,7 +197,7 @@ public class TaskService {
     @Transactional
     public TaskResponse removeAssignee(Long userId, Long taskId, Long targetUserId) {
         Task task = getTask(taskId);
-        requireAssigneeOrOwner(task, userId);
+        taskAccessPolicy.requireEditPermission(task, userId);
         taskAssigneeRepository.findByTaskIdAndUserId(taskId, targetUserId)
                 .ifPresent(assignee -> {
                     taskAssigneeRepository.delete(assignee);
@@ -207,11 +209,4 @@ public class TaskService {
         return TaskResponse.of(task, getAssigneeSummaries(taskId));
     }
 
-    private void requireAssigneeOrOwner(Task task, Long userId) {
-        WorkspaceMember member = workspaceService.getMembership(task.getWorkspace().getId(), userId);
-        boolean isAssignee = taskAssigneeRepository.existsByTaskIdAndUserId(task.getId(), userId);
-        if (!member.isOwner() && !isAssignee) {
-            throw new TaskEditForbiddenException("태스크 수정 권한이 없습니다(담당자 또는 OWNER만 가능).");
-        }
-    }
 }
