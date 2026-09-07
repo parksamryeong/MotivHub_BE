@@ -79,6 +79,32 @@ class TaskChecklistItemControllerTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void updatingChecklistItemWithEmptyContentReturns400() throws Exception {
+        User owner = newUser("c3");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "체크리스트 검증 API 워크스페이스");
+        String createTaskResponse = mockMvc.perform(post("/api/workspaces/{id}/tasks", workspace.id())
+                        .header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new TaskCreateRequest("검증 체크리스트 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()))))
+                .andReturn().getResponse().getContentAsString();
+        Long taskId = objectMapper.readTree(createTaskResponse).get("id").asLong();
+
+        String createItemResponse = mockMvc.perform(post("/api/tasks/{taskId}/checklist-items", taskId)
+                        .header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new TaskChecklistItemCreateRequest("할 일 1"))))
+                .andReturn().getResponse().getContentAsString();
+        Long itemId = objectMapper.readTree(createItemResponse).get("id").asLong();
+
+        mockMvc.perform(patch("/api/tasks/{taskId}/checklist-items/{itemId}", taskId, itemId)
+                        .header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new TaskChecklistItemUpdateRequest("", null))))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void nonMemberCannotCreateChecklistItemReturns403() throws Exception {
         User owner = newUser("c2-owner");
         User outsider = newUser("c2-outsider");

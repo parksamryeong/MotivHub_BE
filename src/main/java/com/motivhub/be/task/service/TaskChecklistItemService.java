@@ -31,7 +31,7 @@ public class TaskChecklistItemService {
     public TaskChecklistItemResponse create(Long userId, Long taskId, String content) {
         Task task = taskService.getTask(taskId);
         taskAccessPolicy.requireEditPermission(task, userId);
-        int orderIndex = (int) taskChecklistItemRepository.countByTaskId(taskId);
+        int orderIndex = taskChecklistItemRepository.findMaxOrderIndexByTaskId(taskId) + 1;
         TaskChecklistItem item = taskChecklistItemRepository.save(TaskChecklistItem.create(task, content, orderIndex));
         return TaskChecklistItemResponse.from(item);
     }

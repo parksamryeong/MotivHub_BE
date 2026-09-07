@@ -1,6 +1,7 @@
 package com.motivhub.be.task.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.motivhub.be.support.AbstractIntegrationTest;
@@ -403,6 +404,80 @@ class TaskServiceTest extends AbstractIntegrationTest {
         taskService.delete(owner.getId(), task.id());
 
         assertThat(taskActivityLogRepository.findByTaskIdOrderByCreatedAtDesc(task.id())).isEmpty();
+    }
+
+    @Test
+    void updatingDescriptionBeyondActivityLogColumnWidthDoesNotThrow() {
+        User owner = newUser("activity-overflow-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "활동로그 초과 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("초과 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+        String longDescription = "x".repeat(600);
+
+        assertThatCode(() -> taskService.updateContent(owner.getId(), task.id(), "초과 태스크", longDescription))
+                .doesNotThrowAnyException();
+
+        List<TaskActivityLog> logs = taskActivityLogRepository.findByTaskIdOrderByCreatedAtDesc(task.id());
+        assertThat(logs.get(0).getAction()).isEqualTo(TaskActivityAction.UPDATE_CONTENT);
+        assertThat(logs.get(0).getField()).isEqualTo("description");
+        assertThat(logs.get(0).getNewValue()).hasSize(500);
+    }
+
+    @Test
+    void updatingOnlyDescriptionRecordsSingleActivityLog() {
+        User owner = newUser("activity-desc-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "활동로그 설명 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("설명 태스크", "원래 설명", LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+
+        taskService.updateContent(owner.getId(), task.id(), "설명 태스크", "바뀐 설명");
+
+        List<TaskActivityLog> logs = taskActivityLogRepository.findByTaskIdOrderByCreatedAtDesc(task.id());
+        assertThat(logs).extracting(TaskActivityLog::getAction)
+                .containsExactly(TaskActivityAction.UPDATE_CONTENT, TaskActivityAction.CREATE);
+        assertThat(logs.get(0).getField()).isEqualTo("description");
+        assertThat(logs.get(0).getOldValue()).isEqualTo("원래 설명");
+        assertThat(logs.get(0).getNewValue()).isEqualTo("바뀐 설명");
+    }
+
+    @Test
+    void updatingPeriodRecordsActivityLog() {
+        User owner = newUser("activity-period-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "활동로그 기간 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("기간 활동 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+        String oldPeriod = LocalDate.now() + "~" + LocalDate.now().plusDays(1);
+        String newPeriod = LocalDate.now() + "~" + LocalDate.now().plusDays(10);
+
+        taskService.updatePeriod(owner.getId(), task.id(), LocalDate.now(), LocalDate.now().plusDays(10));
+
+        List<TaskActivityLog> logs = taskActivityLogRepository.findByTaskIdOrderByCreatedAtDesc(task.id());
+        assertThat(logs.get(0).getAction()).isEqualTo(TaskActivityAction.UPDATE_PERIOD);
+        assertThat(logs.get(0).getField()).isEqualTo("period");
+        assertThat(logs.get(0).getOldValue()).isEqualTo(oldPeriod);
+        assertThat(logs.get(0).getNewValue()).isEqualTo(newPeriod);
+    }
+
+    @Test
+    void revivingExpiredTaskViaUpdatePeriodRecordsPeriodAndStatusActivityLogs() {
+        User owner = newUser("activity-revive-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "활동로그 부활 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("부활 활동 태스크", null, LocalDate.now().minusDays(5), LocalDate.now().minusDays(1), List.of()));
+        taskExpirationScheduler.expireOverdueTasks();
+        assertThat(taskService.getDetail(owner.getId(), task.id()).status()).isEqualTo(TaskStatus.EXPIRED);
+
+        TaskResponse revived = taskService.updatePeriod(owner.getId(), task.id(), LocalDate.now(), LocalDate.now());
+
+        assertThat(revived.status()).isEqualTo(TaskStatus.WAITING);
+        List<TaskActivityLog> logs = taskActivityLogRepository.findByTaskIdOrderByCreatedAtDesc(task.id());
+        assertThat(logs).extracting(TaskActivityLog::getAction)
+                .contains(TaskActivityAction.UPDATE_PERIOD, TaskActivityAction.CHANGE_STATUS);
+        TaskActivityLog statusLog = logs.stream()
+                .filter(log -> log.getAction() == TaskActivityAction.CHANGE_STATUS)
+                .findFirst().orElseThrow();
+        assertThat(statusLog.getOldValue()).isEqualTo("EXPIRED");
+        assertThat(statusLog.getNewValue()).isEqualTo("WAITING");
     }
 
     @Test

@@ -141,10 +141,15 @@ public class TaskService {
         User actor = userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException("유저를 찾을 수 없습니다."));
         String oldPeriod = task.getStartDate() + "~" + task.getDueDate();
+        TaskStatus oldStatus = task.getStatus();
         task.updatePeriod(startDate, dueDate);
         String newPeriod = task.getStartDate() + "~" + task.getDueDate();
         if (!oldPeriod.equals(newPeriod)) {
             taskActivityLogService.record(task, actor, TaskActivityAction.UPDATE_PERIOD, "period", oldPeriod, newPeriod);
+        }
+        if (task.getStatus() != oldStatus) {
+            taskActivityLogService.record(task, actor, TaskActivityAction.CHANGE_STATUS,
+                    "status", oldStatus.name(), task.getStatus().name());
         }
         return TaskResponse.of(task, getAssigneeSummaries(taskId));
     }

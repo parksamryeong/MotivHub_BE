@@ -8,10 +8,11 @@ import org.springframework.data.repository.query.Param;
 
 public interface TaskChecklistItemRepository extends JpaRepository<TaskChecklistItem, Long> {
 
-    @Query("SELECT tci FROM TaskChecklistItem tci WHERE tci.task.id = :taskId ORDER BY tci.orderIndex ASC")
+    @Query("SELECT tci FROM TaskChecklistItem tci WHERE tci.task.id = :taskId ORDER BY tci.orderIndex ASC, tci.id ASC")
     List<TaskChecklistItem> findByTaskIdOrderByOrderIndexAsc(@Param("taskId") Long taskId);
 
-    long countByTaskId(Long taskId);
+    @Query("SELECT COALESCE(MAX(tci.orderIndex), -1) FROM TaskChecklistItem tci WHERE tci.task.id = :taskId")
+    int findMaxOrderIndexByTaskId(@Param("taskId") Long taskId);
 
     void deleteByTaskId(Long taskId);
 }

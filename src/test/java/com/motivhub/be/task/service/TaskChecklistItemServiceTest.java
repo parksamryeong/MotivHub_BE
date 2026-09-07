@@ -128,6 +128,28 @@ class TaskChecklistItemServiceTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void orderIndexDoesNotCollideAfterDeletingAnItem() {
+        User owner = newUser("owner8");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "체크리스트 순서 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("순서 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+        TaskChecklistItemResponse itemA = taskChecklistItemService.create(owner.getId(), task.id(), "A");
+        TaskChecklistItemResponse itemB = taskChecklistItemService.create(owner.getId(), task.id(), "B");
+        TaskChecklistItemResponse itemC = taskChecklistItemService.create(owner.getId(), task.id(), "C");
+        assertThat(itemA.orderIndex()).isZero();
+        assertThat(itemB.orderIndex()).isEqualTo(1);
+        assertThat(itemC.orderIndex()).isEqualTo(2);
+
+        taskChecklistItemService.delete(owner.getId(), task.id(), itemA.id());
+        TaskChecklistItemResponse itemD = taskChecklistItemService.create(owner.getId(), task.id(), "D");
+
+        assertThat(itemD.orderIndex()).isEqualTo(3);
+        List<TaskChecklistItemResponse> items = taskChecklistItemService.list(owner.getId(), task.id());
+        assertThat(items).extracting(TaskChecklistItemResponse::content).containsExactly("B", "C", "D");
+        assertThat(items).extracting(TaskChecklistItemResponse::orderIndex).containsExactly(1, 2, 3);
+    }
+
+    @Test
     void updatingUnknownItemThrows() {
         User owner = newUser("owner7");
         WorkspaceResponse workspace = workspaceService.create(owner.getId(), "체크리스트 미존재 워크스페이스");

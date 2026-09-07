@@ -17,6 +17,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class TaskActivityLogService {
 
+    private static final int FIELD_MAX_LENGTH = 30;
+    private static final int VALUE_MAX_LENGTH = 500;
+
     private final TaskActivityLogRepository taskActivityLogRepository;
     private final TaskRepository taskRepository;
     private final WorkspaceService workspaceService;
@@ -31,7 +34,15 @@ public class TaskActivityLogService {
     @Transactional
     public void record(Task task, User actor, TaskActivityAction action,
                         String field, String oldValue, String newValue) {
-        taskActivityLogRepository.save(TaskActivityLog.create(task, actor, action, field, oldValue, newValue));
+        taskActivityLogRepository.save(TaskActivityLog.create(task, actor, action,
+                truncate(field, FIELD_MAX_LENGTH), truncate(oldValue, VALUE_MAX_LENGTH), truncate(newValue, VALUE_MAX_LENGTH)));
+    }
+
+    private static String truncate(String value, int maxLength) {
+        if (value == null || value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength);
     }
 
     public List<TaskActivityLogResponse> list(Long userId, Long taskId) {
