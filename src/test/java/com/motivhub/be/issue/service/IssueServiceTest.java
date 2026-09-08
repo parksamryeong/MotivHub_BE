@@ -194,4 +194,18 @@ class IssueServiceTest extends AbstractIntegrationTest {
         assertThatThrownBy(() -> issueService.getDetail(created.id()))
                 .isInstanceOf(IssueNotFoundException.class);
     }
+
+    @Test
+    void issuesInDeletedWorkspaceAreExcludedFromListAndDetail() {
+        User author = newUser("deleted-ws1");
+        WorkspaceResponse workspace = workspaceService.create(author.getId(), "삭제될 워크스페이스1");
+        IssueResponse created = issueService.create(
+                author.getId(), workspace.id(), "삭제될 워크스페이스의 이슈", "설명", null);
+
+        workspaceService.delete(author.getId(), workspace.id());
+
+        assertThat(issueService.list()).extracting(IssueResponse::id).doesNotContain(created.id());
+        assertThatThrownBy(() -> issueService.getDetail(created.id()))
+                .isInstanceOf(IssueNotFoundException.class);
+    }
 }

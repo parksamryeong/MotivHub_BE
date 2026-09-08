@@ -9,9 +9,11 @@ import org.springframework.data.repository.query.Param;
 
 public interface IssueRepository extends JpaRepository<Issue, Long> {
 
-    @Query("SELECT i FROM Issue i JOIN FETCH i.author JOIN FETCH i.workspace ORDER BY i.createdAt DESC, i.id DESC")
+    @Query("SELECT i FROM Issue i JOIN FETCH i.author JOIN FETCH i.workspace "
+            + "WHERE i.workspace.deletedAt IS NULL ORDER BY i.createdAt DESC, i.id DESC")
     List<Issue> findAllOrderByCreatedAtDesc();
 
-    @Query("SELECT i FROM Issue i JOIN FETCH i.author JOIN FETCH i.workspace WHERE i.id = :id")
+    @Query("SELECT i FROM Issue i JOIN FETCH i.author JOIN FETCH i.workspace "
+            + "WHERE i.id = :id AND i.workspace.deletedAt IS NULL")
     Optional<Issue> findByIdFetchAuthorAndWorkspace(@Param("id") Long id);
 }

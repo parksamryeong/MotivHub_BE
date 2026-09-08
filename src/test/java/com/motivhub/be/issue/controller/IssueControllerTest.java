@@ -129,6 +129,46 @@ class IssueControllerTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void updatingWithBlankTitleReturns400() throws Exception {
+        User author = newUser("c7-author");
+        WorkspaceResponse workspace = workspaceService.create(author.getId(), "이슈 수정 검증 API 워크스페이스1");
+        String createResponse = mockMvc.perform(post("/api/issues")
+                        .header("Authorization", "Bearer " + tokenFor(author))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new IssueCreateRequest(workspace.id(), "제목", "설명", null))))
+                .andReturn().getResponse().getContentAsString();
+        Long issueId = objectMapper.readTree(createResponse).get("id").asLong();
+
+        mockMvc.perform(patch("/api/issues/{id}", issueId)
+                        .header("Authorization", "Bearer " + tokenFor(author))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new IssueUpdateRequest("", null, null))))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void updatingWithBlankProblemDescriptionReturns400() throws Exception {
+        User author = newUser("c8-author");
+        WorkspaceResponse workspace = workspaceService.create(author.getId(), "이슈 수정 검증 API 워크스페이스2");
+        String createResponse = mockMvc.perform(post("/api/issues")
+                        .header("Authorization", "Bearer " + tokenFor(author))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new IssueCreateRequest(workspace.id(), "제목", "설명", null))))
+                .andReturn().getResponse().getContentAsString();
+        Long issueId = objectMapper.readTree(createResponse).get("id").asLong();
+
+        mockMvc.perform(patch("/api/issues/{id}", issueId)
+                        .header("Authorization", "Bearer " + tokenFor(author))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new IssueUpdateRequest(null, "", null))))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void authorDeletesOwnIssue() throws Exception {
         User author = newUser("c6-author");
         WorkspaceResponse workspace = workspaceService.create(author.getId(), "이슈 삭제 API 워크스페이스");
