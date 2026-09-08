@@ -61,7 +61,7 @@ class WorkspaceFileServiceTest extends AbstractIntegrationTest {
                 uploader.getId(), workspaceId, fileName, "text/plain", 5L);
         uploadToPresignedUrl(presign.uploadUrl(), "hello");
         return workspaceFileService.confirm(
-                uploader.getId(), workspaceId, presign.fileKey(), fileName, 5L, "text/plain");
+                uploader.getId(), workspaceId, presign.fileKey(), fileName, 5L, "text/plain", null);
     }
 
     @Test
@@ -117,11 +117,39 @@ class WorkspaceFileServiceTest extends AbstractIntegrationTest {
         uploadToPresignedUrl(presign.uploadUrl(), "hello world!!");
 
         WorkspaceFileResponse confirmed = workspaceFileService.confirm(
-                owner.getId(), workspace.id(), presign.fileKey(), "report.pdf", 13L, "application/pdf");
+                owner.getId(), workspace.id(), presign.fileKey(), "report.pdf", 13L, "application/pdf", null);
 
         assertThat(confirmed.fileName()).isEqualTo("report.pdf");
         assertThat(confirmed.fileSize()).isEqualTo(13L);
         assertThat(confirmed.uploadedBy().id()).isEqualTo(owner.getId());
+    }
+
+    @Test
+    void confirmingWithCategorySavesAndReturnsIt() throws Exception {
+        User owner = newUser("category-owner1");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "카테고리 워크스페이스1");
+        FilePresignResponse presign = workspaceFileService.presign(
+                owner.getId(), workspace.id(), "invoice.pdf", "application/pdf", 5L);
+        uploadToPresignedUrl(presign.uploadUrl(), "hello");
+
+        WorkspaceFileResponse confirmed = workspaceFileService.confirm(
+                owner.getId(), workspace.id(), presign.fileKey(), "invoice.pdf", 5L, "application/pdf", "영수증");
+
+        assertThat(confirmed.category()).isEqualTo("영수증");
+    }
+
+    @Test
+    void confirmingWithoutCategorySavesNull() throws Exception {
+        User owner = newUser("category-owner2");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "카테고리 워크스페이스2");
+        FilePresignResponse presign = workspaceFileService.presign(
+                owner.getId(), workspace.id(), "no-category.pdf", "application/pdf", 5L);
+        uploadToPresignedUrl(presign.uploadUrl(), "hello");
+
+        WorkspaceFileResponse confirmed = workspaceFileService.confirm(
+                owner.getId(), workspace.id(), presign.fileKey(), "no-category.pdf", 5L, "application/pdf", null);
+
+        assertThat(confirmed.category()).isNull();
     }
 
     @Test
@@ -132,7 +160,7 @@ class WorkspaceFileServiceTest extends AbstractIntegrationTest {
                 owner.getId(), workspace.id(), "ghost.pdf", "application/pdf", 100L);
 
         assertThatThrownBy(() -> workspaceFileService.confirm(
-                owner.getId(), workspace.id(), presign.fileKey(), "ghost.pdf", 100L, "application/pdf"))
+                owner.getId(), workspace.id(), presign.fileKey(), "ghost.pdf", 100L, "application/pdf", null))
                 .isInstanceOf(FileUploadNotConfirmedException.class);
     }
 
@@ -146,7 +174,7 @@ class WorkspaceFileServiceTest extends AbstractIntegrationTest {
         uploadToPresignedUrl(presignForA.uploadUrl(), "hello");
 
         assertThatThrownBy(() -> workspaceFileService.confirm(
-                owner.getId(), workspaceB.id(), presignForA.fileKey(), "shared.pdf", 5L, "application/pdf"))
+                owner.getId(), workspaceB.id(), presignForA.fileKey(), "shared.pdf", 5L, "application/pdf", null))
                 .isInstanceOf(FileUploadNotConfirmedException.class);
     }
 
@@ -157,11 +185,13 @@ class WorkspaceFileServiceTest extends AbstractIntegrationTest {
         FilePresignResponse first = workspaceFileService.presign(
                 owner.getId(), workspace.id(), "first.txt", "text/plain", 1L);
         uploadToPresignedUrl(first.uploadUrl(), "a");
-        workspaceFileService.confirm(owner.getId(), workspace.id(), first.fileKey(), "first.txt", 1L, "text/plain");
+        workspaceFileService.confirm(
+                owner.getId(), workspace.id(), first.fileKey(), "first.txt", 1L, "text/plain", null);
         FilePresignResponse second = workspaceFileService.presign(
                 owner.getId(), workspace.id(), "second.txt", "text/plain", 1L);
         uploadToPresignedUrl(second.uploadUrl(), "b");
-        workspaceFileService.confirm(owner.getId(), workspace.id(), second.fileKey(), "second.txt", 1L, "text/plain");
+        workspaceFileService.confirm(
+                owner.getId(), workspace.id(), second.fileKey(), "second.txt", 1L, "text/plain", null);
 
         List<WorkspaceFileResponse> files = workspaceFileService.list(owner.getId(), workspace.id());
 
@@ -259,7 +289,7 @@ class WorkspaceFileServiceTest extends AbstractIntegrationTest {
                 owner.getId(), workspace.id(), "gone.txt", "text/plain", 5L);
         uploadToPresignedUrl(presign.uploadUrl(), "hello");
         WorkspaceFileResponse file = workspaceFileService.confirm(
-                owner.getId(), workspace.id(), presign.fileKey(), "gone.txt", 5L, "text/plain");
+                owner.getId(), workspace.id(), presign.fileKey(), "gone.txt", 5L, "text/plain", null);
 
         workspaceFileService.delete(owner.getId(), workspace.id(), file.id());
 

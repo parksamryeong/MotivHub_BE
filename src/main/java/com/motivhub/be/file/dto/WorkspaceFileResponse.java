@@ -5,12 +5,12 @@ import com.motivhub.be.user.dto.UserSummary;
 import java.time.LocalDateTime;
 
 public record WorkspaceFileResponse(
-        Long id, String fileName, long fileSize, String contentType, UserSummary uploadedBy,
+        Long id, String fileName, long fileSize, String contentType, String category, UserSummary uploadedBy,
         LocalDateTime createdAt) {
 
     public static WorkspaceFileResponse from(WorkspaceFile file) {
         return new WorkspaceFileResponse(
-                file.getId(), file.getFileName(), file.getFileSize(), file.getContentType(),
+                file.getId(), file.getFileName(), file.getFileSize(), file.getContentType(), file.getCategory(),
                 UserSummary.from(file.getUploadedBy()), file.getCreatedAt());
     }
 }

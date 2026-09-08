@@ -89,15 +89,17 @@ class WorkspaceFileControllerTest extends AbstractIntegrationTest {
                         .header("Authorization", "Bearer " + tokenFor(owner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                new WorkspaceFileConfirmRequest(fileKey, "notes.txt", 5L, "text/plain"))))
+                                new WorkspaceFileConfirmRequest(fileKey, "notes.txt", 5L, "text/plain", "문서"))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.fileName").value("notes.txt"));
+                .andExpect(jsonPath("$.fileName").value("notes.txt"))
+                .andExpect(jsonPath("$.category").value("문서"));
 
         mockMvc.perform(get("/api/workspaces/{workspaceId}/files", workspace.id())
                         .header("Authorization", "Bearer " + tokenFor(owner)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].fileName").value("notes.txt"))
+                .andExpect(jsonPath("$[0].category").value("문서"))
                 .andExpect(jsonPath("$[0].uploadedBy.nickname").value(owner.getNickname()));
     }
 
@@ -121,7 +123,7 @@ class WorkspaceFileControllerTest extends AbstractIntegrationTest {
                         .header("Authorization", "Bearer " + tokenFor(owner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                new WorkspaceFileConfirmRequest(fileKey, "dl.txt", 5L, "text/plain"))))
+                                new WorkspaceFileConfirmRequest(fileKey, "dl.txt", 5L, "text/plain", null))))
                 .andReturn().getResponse().getContentAsString();
         Long fileId = objectMapper.readTree(confirmResponse).get("id").asLong();
 

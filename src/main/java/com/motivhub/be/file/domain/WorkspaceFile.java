@@ -42,6 +42,9 @@ public class WorkspaceFile {
     @Column(name = "content_type", nullable = false, length = 255)
     private String contentType;
 
+    @Column(length = 50)
+    private String category;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "uploaded_by", nullable = false)
     private User uploadedBy;
@@ -50,19 +53,20 @@ public class WorkspaceFile {
     private LocalDateTime createdAt;
 
     private WorkspaceFile(Workspace workspace, String fileKey, String fileName, long fileSize,
-                           String contentType, User uploadedBy) {
+                           String contentType, String category, User uploadedBy) {
         this.workspace = workspace;
         this.fileKey = fileKey;
         this.fileName = fileName;
         this.fileSize = fileSize;
         this.contentType = contentType;
+        this.category = category;
         this.uploadedBy = uploadedBy;
         this.createdAt = LocalDateTime.now();
     }
 
     public static WorkspaceFile create(Workspace workspace, String fileKey, String fileName, long fileSize,
-                                        String contentType, User uploadedBy) {
-        return new WorkspaceFile(workspace, fileKey, fileName, fileSize, contentType, uploadedBy);
+                                        String contentType, String category, User uploadedBy) {
+        return new WorkspaceFile(workspace, fileKey, fileName, fileSize, contentType, category, uploadedBy);
     }
 
     public boolean isUploadedBy(Long userId) {

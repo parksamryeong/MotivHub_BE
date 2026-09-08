@@ -92,7 +92,7 @@ public class WorkspaceFileService {
 
     @Transactional
     public WorkspaceFileResponse confirm(Long userId, Long workspaceId, String fileKey, String fileName,
-                                          long fileSize, String contentType) {
+                                          long fileSize, String contentType, String category) {
         Workspace workspace = workspaceService.getMembership(workspaceId, userId).getWorkspace();
         String expectedPrefix = "workspaces/" + workspaceId + "/files/";
         if (!fileKey.startsWith(expectedPrefix)) {
@@ -115,8 +115,8 @@ public class WorkspaceFileService {
         }
         User uploadedBy = userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException("유저를 찾을 수 없습니다."));
-        WorkspaceFile file = workspaceFileRepository.save(
-                WorkspaceFile.create(workspace, fileKey, fileName, actualFileSize, actualContentType, uploadedBy));
+        WorkspaceFile file = workspaceFileRepository.save(WorkspaceFile.create(
+                workspace, fileKey, fileName, actualFileSize, actualContentType, category, uploadedBy));
         return WorkspaceFileResponse.from(file);
     }
 

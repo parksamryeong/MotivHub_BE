@@ -40,7 +40,7 @@ public class WorkspaceFileController {
             @Valid @RequestBody WorkspaceFileConfirmRequest request) {
         return ResponseEntity.ok(workspaceFileService.confirm(
                 userId, workspaceId, request.fileKey(), request.fileName(), request.fileSize(),
-                request.contentType()));
+                request.contentType(), request.category()));
     }
 
     @GetMapping("/api/workspaces/{workspaceId}/files")
