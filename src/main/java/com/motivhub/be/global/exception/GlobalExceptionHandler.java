@@ -5,6 +5,7 @@ import com.motivhub.be.auth.exception.InvalidRefreshTokenException;
 import com.motivhub.be.auth.exception.LogoutForbiddenException;
 import com.motivhub.be.file.exception.BlockedFileExtensionException;
 import com.motivhub.be.file.exception.FileTooLargeException;
+import com.motivhub.be.file.exception.FileUploadNotConfirmedException;
 import com.motivhub.be.task.exception.InvalidTaskStatusTransitionException;
 import com.motivhub.be.task.exception.TaskChecklistItemNotFoundException;
 import com.motivhub.be.task.exception.TaskCommentForbiddenException;
@@ -177,5 +178,11 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleBlockedFileExtension(BlockedFileExtensionException e) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ErrorResponse.of("BLOCKED_FILE_EXTENSION", e.getMessage()));
+    }
+
+    @ExceptionHandler(FileUploadNotConfirmedException.class)
+    public ResponseEntity<ErrorResponse> handleFileUploadNotConfirmed(FileUploadNotConfirmedException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("FILE_UPLOAD_NOT_CONFIRMED", e.getMessage()));
     }
 }
