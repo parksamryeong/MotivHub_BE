@@ -35,6 +35,22 @@ MySQL, Redis, Prometheus, Grafana가 함께 기동됩니다. 기동 후 서비�
 
 > `/actuator/health`, `/actuator/prometheus`는 로컬 개발 편의를 위해 인증 없이 노출되어 있습니다. 실제 배포 환경에는 그대로 가져가면 안 됩니다.
 
+### 4. (선택) 로컬에서 파일함 기능 손으로 테스트하기
+
+`docker compose up -d`로 함께 뜨는 LocalStack(`localhost:4566`)이 S3를 흉내낸다. 버킷을 한 번 만들어야 한다:
+
+```bash
+docker compose exec localstack awslocal s3 mb s3://motivhub-local
+```
+
+앱을 아래 환경변수로 기동하면 파일함 API가 LocalStack을 보게 된다(자격증명 값은 아무 문자열이어도 됨 —
+LocalStack은 검증하지 않는다):
+
+```bash
+AWS_S3_ENDPOINT_OVERRIDE=http://localhost:4566 AWS_S3_BUCKET=motivhub-local \
+AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test ./gradlew bootRun
+```
+
 ### 부하테스트 (k6)
 
 ```bash
