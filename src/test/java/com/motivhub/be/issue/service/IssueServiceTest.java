@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.motivhub.be.issue.dto.IssueResponse;
 import com.motivhub.be.issue.exception.IssueForbiddenException;
 import com.motivhub.be.issue.exception.IssueNotFoundException;
+import com.motivhub.be.issue.repository.IssueCommentRepository;
 import com.motivhub.be.support.AbstractIntegrationTest;
 import com.motivhub.be.user.domain.SocialProvider;
 import com.motivhub.be.user.domain.User;
@@ -24,6 +25,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 class IssueServiceTest extends AbstractIntegrationTest {
 
     @Autowired private IssueService issueService;
+    @Autowired private IssueCommentService issueCommentService;
+    @Autowired private IssueCommentRepository issueCommentRepository;
     @Autowired private WorkspaceService workspaceService;
     @Autowired private UserRepository userRepository;
     @Autowired private WorkspaceMemberRepository workspaceMemberRepository;
@@ -177,5 +180,18 @@ class IssueServiceTest extends AbstractIntegrationTest {
 
         assertThatThrownBy(() -> issueService.delete(owner.getId(), created.id()))
                 .isInstanceOf(IssueForbiddenException.class);
+    }
+
+    @Test
+    void deletingIssueRemovesItEvenWithComments() {
+        User author = newUser("delete-with-comments1");
+        WorkspaceResponse workspace = workspaceService.create(author.getId(), "이슈 댓글 삭제 검증 워크스페이스");
+        IssueResponse created = issueService.create(author.getId(), workspace.id(), "제목", "설명", null);
+        issueCommentService.create(author.getId(), created.id(), "댓글");
+
+        issueService.delete(author.getId(), created.id());
+
+        assertThatThrownBy(() -> issueService.getDetail(created.id()))
+                .isInstanceOf(IssueNotFoundException.class);
     }
 }

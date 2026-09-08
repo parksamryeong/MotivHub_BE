@@ -4,6 +4,7 @@ import com.motivhub.be.issue.domain.Issue;
 import com.motivhub.be.issue.dto.IssueResponse;
 import com.motivhub.be.issue.exception.IssueForbiddenException;
 import com.motivhub.be.issue.exception.IssueNotFoundException;
+import com.motivhub.be.issue.repository.IssueCommentRepository;
 import com.motivhub.be.issue.repository.IssueRepository;
 import com.motivhub.be.user.domain.User;
 import com.motivhub.be.user.exception.UserNotFoundException;
@@ -21,12 +22,14 @@ public class IssueService {
     private final IssueRepository issueRepository;
     private final WorkspaceService workspaceService;
     private final UserRepository userRepository;
+    private final IssueCommentRepository issueCommentRepository;
 
     public IssueService(IssueRepository issueRepository, WorkspaceService workspaceService,
-                         UserRepository userRepository) {
+                         UserRepository userRepository, IssueCommentRepository issueCommentRepository) {
         this.issueRepository = issueRepository;
         this.workspaceService = workspaceService;
         this.userRepository = userRepository;
+        this.issueCommentRepository = issueCommentRepository;
     }
 
     @Transactional
@@ -73,6 +76,7 @@ public class IssueService {
         if (!issue.isAuthoredBy(userId)) {
             throw new IssueForbiddenException("작성자 본인만 삭제할 수 있습니다.");
         }
+        issueCommentRepository.deleteByIssueId(issueId);
         issueRepository.delete(issue);
     }
 }
