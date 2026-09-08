@@ -4,13 +4,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.motivhub.be.issue.dto.IssueResponse;
+import com.motivhub.be.issue.exception.IssueForbiddenException;
 import com.motivhub.be.issue.exception.IssueNotFoundException;
 import com.motivhub.be.support.AbstractIntegrationTest;
 import com.motivhub.be.user.domain.SocialProvider;
 import com.motivhub.be.user.domain.User;
 import com.motivhub.be.user.repository.UserRepository;
+import com.motivhub.be.workspace.domain.Workspace;
+import com.motivhub.be.workspace.domain.WorkspaceMember;
+import com.motivhub.be.workspace.domain.WorkspaceRole;
 import com.motivhub.be.workspace.dto.WorkspaceResponse;
 import com.motivhub.be.workspace.exception.NotWorkspaceMemberException;
+import com.motivhub.be.workspace.repository.WorkspaceMemberRepository;
 import com.motivhub.be.workspace.service.WorkspaceService;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -21,10 +26,16 @@ class IssueServiceTest extends AbstractIntegrationTest {
     @Autowired private IssueService issueService;
     @Autowired private WorkspaceService workspaceService;
     @Autowired private UserRepository userRepository;
+    @Autowired private WorkspaceMemberRepository workspaceMemberRepository;
 
     private User newUser(String suffix) {
         return userRepository.save(User.create(
                 SocialProvider.GITHUB, "issue-test-" + suffix, suffix + "@test.com", "user_" + suffix, null));
+    }
+
+    private void joinAsMember(Long workspaceId, User user) {
+        Workspace workspace = workspaceService.getWorkspace(workspaceId);
+        workspaceMemberRepository.save(WorkspaceMember.create(workspace, user, WorkspaceRole.MEMBER));
     }
 
     @Test
@@ -100,5 +111,71 @@ class IssueServiceTest extends AbstractIntegrationTest {
     void getDetailFailsForUnknownIssue() {
         assertThatThrownBy(() -> issueService.getDetail(999_999L))
                 .isInstanceOf(IssueNotFoundException.class);
+    }
+
+    @Test
+    void authorCanUpdateOwnIssue() {
+        User author = newUser("update-author1");
+        WorkspaceResponse workspace = workspaceService.create(author.getId(), "이슈 수정 워크스페이스1");
+        IssueResponse created = issueService.create(
+                author.getId(), workspace.id(), "원래 제목", "원래 설명", null);
+
+        IssueResponse updated = issueService.update(
+                author.getId(), created.id(), "바뀐 제목", null, "해결됨");
+
+        assertThat(updated.title()).isEqualTo("바뀐 제목");
+        assertThat(updated.problemDescription()).isEqualTo("원래 설명");
+        assertThat(updated.solution()).isEqualTo("해결됨");
+    }
+
+    @Test
+    void updatingSolutionToEmptyStringClearsIt() {
+        User author = newUser("update-author2");
+        WorkspaceResponse workspace = workspaceService.create(author.getId(), "이슈 수정 워크스페이스2");
+        IssueResponse created = issueService.create(
+                author.getId(), workspace.id(), "제목", "설명", "해결방법");
+
+        IssueResponse updated = issueService.update(author.getId(), created.id(), null, null, "");
+
+        assertThat(updated.solution()).isNull();
+    }
+
+    @Test
+    void ownerCannotUpdateOthersIssue() {
+        User owner = newUser("update-owner3");
+        User author = newUser("update-author3");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "이슈 수정 워크스페이스3");
+        joinAsMember(workspace.id(), author);
+        IssueResponse created = issueService.create(
+                author.getId(), workspace.id(), "제목", "설명", null);
+
+        assertThatThrownBy(() -> issueService.update(owner.getId(), created.id(), "해킹 시도", null, null))
+                .isInstanceOf(IssueForbiddenException.class);
+    }
+
+    @Test
+    void authorCanDeleteOwnIssue() {
+        User author = newUser("delete-author1");
+        WorkspaceResponse workspace = workspaceService.create(author.getId(), "이슈 삭제 워크스페이스1");
+        IssueResponse created = issueService.create(
+                author.getId(), workspace.id(), "제목", "설명", null);
+
+        issueService.delete(author.getId(), created.id());
+
+        assertThatThrownBy(() -> issueService.getDetail(created.id()))
+                .isInstanceOf(IssueNotFoundException.class);
+    }
+
+    @Test
+    void ownerCannotDeleteOthersIssue() {
+        User owner = newUser("delete-owner2");
+        User author = newUser("delete-author2");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "이슈 삭제 워크스페이스2");
+        joinAsMember(workspace.id(), author);
+        IssueResponse created = issueService.create(
+                author.getId(), workspace.id(), "제목", "설명", null);
+
+        assertThatThrownBy(() -> issueService.delete(owner.getId(), created.id()))
+                .isInstanceOf(IssueForbiddenException.class);
     }
 }

@@ -2,6 +2,7 @@ package com.motivhub.be.issue.service;
 
 import com.motivhub.be.issue.domain.Issue;
 import com.motivhub.be.issue.dto.IssueResponse;
+import com.motivhub.be.issue.exception.IssueForbiddenException;
 import com.motivhub.be.issue.exception.IssueNotFoundException;
 import com.motivhub.be.issue.repository.IssueRepository;
 import com.motivhub.be.user.domain.User;
@@ -53,5 +54,25 @@ public class IssueService {
     public Issue getIssue(Long issueId) {
         return issueRepository.findById(issueId)
                 .orElseThrow(() -> new IssueNotFoundException("이슈를 찾을 수 없습니다."));
+    }
+
+    @Transactional
+    public IssueResponse update(Long userId, Long issueId, String title, String problemDescription,
+                                 String solution) {
+        Issue issue = getIssue(issueId);
+        if (!issue.isAuthoredBy(userId)) {
+            throw new IssueForbiddenException("작성자 본인만 수정할 수 있습니다.");
+        }
+        issue.update(title, problemDescription, solution);
+        return IssueResponse.from(issue);
+    }
+
+    @Transactional
+    public void delete(Long userId, Long issueId) {
+        Issue issue = getIssue(issueId);
+        if (!issue.isAuthoredBy(userId)) {
+            throw new IssueForbiddenException("작성자 본인만 삭제할 수 있습니다.");
+        }
+        issueRepository.delete(issue);
     }
 }

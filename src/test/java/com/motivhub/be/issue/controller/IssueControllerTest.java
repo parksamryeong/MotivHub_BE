@@ -1,6 +1,8 @@
 package com.motivhub.be.issue.controller;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -8,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.motivhub.be.auth.jwt.JwtProvider;
 import com.motivhub.be.issue.dto.IssueCreateRequest;
+import com.motivhub.be.issue.dto.IssueUpdateRequest;
 import com.motivhub.be.support.AbstractIntegrationTest;
 import com.motivhub.be.user.domain.SocialProvider;
 import com.motivhub.be.user.domain.User;
@@ -101,5 +104,44 @@ class IssueControllerTest extends AbstractIntegrationTest {
                         .header("Authorization", "Bearer " + tokenFor(user)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("ISSUE_NOT_FOUND"));
+    }
+
+    @Test
+    void nonAuthorCannotUpdateIssueReturns403() throws Exception {
+        User author = newUser("c5-author");
+        User bystander = newUser("c5-bystander");
+        WorkspaceResponse workspace = workspaceService.create(author.getId(), "이슈 수정 API 워크스페이스");
+        String createResponse = mockMvc.perform(post("/api/issues")
+                        .header("Authorization", "Bearer " + tokenFor(author))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new IssueCreateRequest(workspace.id(), "제목", "설명", null))))
+                .andReturn().getResponse().getContentAsString();
+        Long issueId = objectMapper.readTree(createResponse).get("id").asLong();
+
+        mockMvc.perform(patch("/api/issues/{id}", issueId)
+                        .header("Authorization", "Bearer " + tokenFor(bystander))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new IssueUpdateRequest("해킹", null, null))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ISSUE_FORBIDDEN"));
+    }
+
+    @Test
+    void authorDeletesOwnIssue() throws Exception {
+        User author = newUser("c6-author");
+        WorkspaceResponse workspace = workspaceService.create(author.getId(), "이슈 삭제 API 워크스페이스");
+        String createResponse = mockMvc.perform(post("/api/issues")
+                        .header("Authorization", "Bearer " + tokenFor(author))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new IssueCreateRequest(workspace.id(), "제목", "설명", null))))
+                .andReturn().getResponse().getContentAsString();
+        Long issueId = objectMapper.readTree(createResponse).get("id").asLong();
+
+        mockMvc.perform(delete("/api/issues/{id}", issueId)
+                        .header("Authorization", "Bearer " + tokenFor(author)))
+                .andExpect(status().isNoContent());
     }
 }
