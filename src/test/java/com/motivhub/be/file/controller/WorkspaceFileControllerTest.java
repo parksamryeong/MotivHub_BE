@@ -1,6 +1,7 @@
 package com.motivhub.be.file.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -98,5 +99,39 @@ class WorkspaceFileControllerTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].fileName").value("notes.txt"))
                 .andExpect(jsonPath("$[0].uploadedBy.nickname").value(owner.getNickname()));
+    }
+
+    @Test
+    void downloadsAndDeletesFile() throws Exception {
+        User owner = newUser("f3-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "파일함 API 워크스페이스3");
+        String presignResponse = mockMvc.perform(post("/api/workspaces/{workspaceId}/files/presign", workspace.id())
+                        .header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new FilePresignRequest("dl.txt", "text/plain", 5L))))
+                .andReturn().getResponse().getContentAsString();
+        JsonNode presignJson = objectMapper.readTree(presignResponse);
+        String uploadUrl = presignJson.get("uploadUrl").asText();
+        String fileKey = presignJson.get("fileKey").asText();
+        HttpClient client = HttpClient.newHttpClient();
+        client.send(HttpRequest.newBuilder().uri(URI.create(uploadUrl))
+                .PUT(HttpRequest.BodyPublishers.ofString("hello")).build(), HttpResponse.BodyHandlers.discarding());
+        String confirmResponse = mockMvc.perform(post("/api/workspaces/{workspaceId}/files", workspace.id())
+                        .header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new WorkspaceFileConfirmRequest(fileKey, "dl.txt", 5L, "text/plain"))))
+                .andReturn().getResponse().getContentAsString();
+        Long fileId = objectMapper.readTree(confirmResponse).get("id").asLong();
+
+        mockMvc.perform(get("/api/workspaces/{workspaceId}/files/{fileId}/download", workspace.id(), fileId)
+                        .header("Authorization", "Bearer " + tokenFor(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.downloadUrl").isNotEmpty());
+
+        mockMvc.perform(delete("/api/workspaces/{workspaceId}/files/{fileId}", workspace.id(), fileId)
+                        .header("Authorization", "Bearer " + tokenFor(owner)))
+                .andExpect(status().isNoContent());
     }
 }

@@ -6,6 +6,8 @@ import com.motivhub.be.auth.exception.LogoutForbiddenException;
 import com.motivhub.be.file.exception.BlockedFileExtensionException;
 import com.motivhub.be.file.exception.FileTooLargeException;
 import com.motivhub.be.file.exception.FileUploadNotConfirmedException;
+import com.motivhub.be.file.exception.WorkspaceFileForbiddenException;
+import com.motivhub.be.file.exception.WorkspaceFileNotFoundException;
 import com.motivhub.be.task.exception.InvalidTaskStatusTransitionException;
 import com.motivhub.be.task.exception.TaskChecklistItemNotFoundException;
 import com.motivhub.be.task.exception.TaskCommentForbiddenException;
@@ -184,5 +186,17 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleFileUploadNotConfirmed(FileUploadNotConfirmedException e) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ErrorResponse.of("FILE_UPLOAD_NOT_CONFIRMED", e.getMessage()));
+    }
+
+    @ExceptionHandler(WorkspaceFileNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleWorkspaceFileNotFound(WorkspaceFileNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("WORKSPACE_FILE_NOT_FOUND", e.getMessage()));
+    }
+
+    @ExceptionHandler(WorkspaceFileForbiddenException.class)
+    public ResponseEntity<ErrorResponse> handleWorkspaceFileForbidden(WorkspaceFileForbiddenException e) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(ErrorResponse.of("WORKSPACE_FILE_FORBIDDEN", e.getMessage()));
     }
 }

@@ -1,5 +1,6 @@
 package com.motivhub.be.file.controller;
 
+import com.motivhub.be.file.dto.FileDownloadResponse;
 import com.motivhub.be.file.dto.FilePresignRequest;
 import com.motivhub.be.file.dto.FilePresignResponse;
 import com.motivhub.be.file.dto.WorkspaceFileConfirmRequest;
@@ -9,6 +10,7 @@ import jakarta.validation.Valid;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -45,5 +47,18 @@ public class WorkspaceFileController {
     public ResponseEntity<List<WorkspaceFileResponse>> list(
             @AuthenticationPrincipal Long userId, @PathVariable Long workspaceId) {
         return ResponseEntity.ok(workspaceFileService.list(userId, workspaceId));
+    }
+
+    @GetMapping("/api/workspaces/{workspaceId}/files/{fileId}/download")
+    public ResponseEntity<FileDownloadResponse> download(
+            @AuthenticationPrincipal Long userId, @PathVariable Long workspaceId, @PathVariable Long fileId) {
+        return ResponseEntity.ok(workspaceFileService.getDownloadUrl(userId, workspaceId, fileId));
+    }
+
+    @DeleteMapping("/api/workspaces/{workspaceId}/files/{fileId}")
+    public ResponseEntity<Void> delete(
+            @AuthenticationPrincipal Long userId, @PathVariable Long workspaceId, @PathVariable Long fileId) {
+        workspaceFileService.delete(userId, workspaceId, fileId);
+        return ResponseEntity.noContent().build();
     }
 }

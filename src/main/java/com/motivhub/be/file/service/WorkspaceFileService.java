@@ -1,16 +1,20 @@
 package com.motivhub.be.file.service;
 
 import com.motivhub.be.file.domain.WorkspaceFile;
+import com.motivhub.be.file.dto.FileDownloadResponse;
 import com.motivhub.be.file.dto.FilePresignResponse;
 import com.motivhub.be.file.dto.WorkspaceFileResponse;
 import com.motivhub.be.file.exception.BlockedFileExtensionException;
 import com.motivhub.be.file.exception.FileTooLargeException;
 import com.motivhub.be.file.exception.FileUploadNotConfirmedException;
+import com.motivhub.be.file.exception.WorkspaceFileForbiddenException;
+import com.motivhub.be.file.exception.WorkspaceFileNotFoundException;
 import com.motivhub.be.file.repository.WorkspaceFileRepository;
 import com.motivhub.be.user.domain.User;
 import com.motivhub.be.user.exception.UserNotFoundException;
 import com.motivhub.be.user.repository.UserRepository;
 import com.motivhub.be.workspace.domain.Workspace;
+import com.motivhub.be.workspace.domain.WorkspaceMember;
 import com.motivhub.be.workspace.service.WorkspaceService;
 import java.time.Duration;
 import java.util.List;
@@ -20,10 +24,14 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
@@ -115,5 +123,40 @@ public class WorkspaceFileService {
                 throw new BlockedFileExtensionException("허용되지 않는 파일 형식입니다: " + extension);
             }
         }
+    }
+
+    public FileDownloadResponse getDownloadUrl(Long userId, Long workspaceId, Long fileId) {
+        workspaceService.getMembership(workspaceId, userId);
+        WorkspaceFile file = findFile(workspaceId, fileId);
+
+        GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+                .bucket(bucket)
+                .key(file.getFileKey())
+                .build();
+        GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
+                .signatureDuration(Duration.ofMinutes(5))
+                .getObjectRequest(getObjectRequest)
+                .build();
+        PresignedGetObjectRequest presigned = s3Presigner.presignGetObject(presignRequest);
+
+        return new FileDownloadResponse(presigned.url().toString());
+    }
+
+    @Transactional
+    public void delete(Long userId, Long workspaceId, Long fileId) {
+        WorkspaceMember member = workspaceService.getMembership(workspaceId, userId);
+        WorkspaceFile file = findFile(workspaceId, fileId);
+        boolean allowed = member.isOwner() || file.isUploadedBy(userId);
+        if (!allowed) {
+            throw new WorkspaceFileForbiddenException("업로더 본인이거나 워크스페이스 OWNER만 삭제할 수 있습니다.");
+        }
+        s3Client.deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(file.getFileKey()).build());
+        workspaceFileRepository.delete(file);
+    }
+
+    private WorkspaceFile findFile(Long workspaceId, Long fileId) {
+        return workspaceFileRepository.findById(fileId)
+                .filter(file -> file.getWorkspace().getId().equals(workspaceId))
+                .orElseThrow(() -> new WorkspaceFileNotFoundException("파일을 찾을 수 없습니다."));
     }
 }
