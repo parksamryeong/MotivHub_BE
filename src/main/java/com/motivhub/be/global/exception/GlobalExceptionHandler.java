@@ -8,6 +8,7 @@ import com.motivhub.be.file.exception.FileTooLargeException;
 import com.motivhub.be.file.exception.FileUploadNotConfirmedException;
 import com.motivhub.be.file.exception.WorkspaceFileForbiddenException;
 import com.motivhub.be.file.exception.WorkspaceFileNotFoundException;
+import com.motivhub.be.issue.exception.IssueNotFoundException;
 import com.motivhub.be.task.exception.InvalidTaskStatusTransitionException;
 import com.motivhub.be.task.exception.TaskChecklistItemNotFoundException;
 import com.motivhub.be.task.exception.TaskCommentForbiddenException;
@@ -198,5 +199,11 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleWorkspaceFileForbidden(WorkspaceFileForbiddenException e) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(ErrorResponse.of("WORKSPACE_FILE_FORBIDDEN", e.getMessage()));
+    }
+
+    @ExceptionHandler(IssueNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleIssueNotFound(IssueNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("ISSUE_NOT_FOUND", e.getMessage()));
     }
 }
