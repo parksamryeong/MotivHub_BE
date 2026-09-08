@@ -134,4 +134,33 @@ class WorkspaceFileControllerTest extends AbstractIntegrationTest {
                         .header("Authorization", "Bearer " + tokenFor(owner)))
                 .andExpect(status().isNoContent());
     }
+
+    @Test
+    void nonMemberCannotPresignReturns403WithCorrectErrorCode() throws Exception {
+        User owner = newUser("f4-owner");
+        User outsider = newUser("f4-outsider");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "파일함 권한 API 워크스페이스");
+
+        mockMvc.perform(post("/api/workspaces/{workspaceId}/files/presign", workspace.id())
+                        .header("Authorization", "Bearer " + tokenFor(outsider))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new FilePresignRequest("secret.pdf", "application/pdf", 1_000L))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("NOT_WORKSPACE_MEMBER"));
+    }
+
+    @Test
+    void presigningBlockedExtensionReturns400WithCorrectErrorCode() throws Exception {
+        User owner = newUser("f5-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "파일함 확장자 API 워크스페이스");
+
+        mockMvc.perform(post("/api/workspaces/{workspaceId}/files/presign", workspace.id())
+                        .header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new FilePresignRequest("virus.exe", "application/octet-stream", 1_000L))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("BLOCKED_FILE_EXTENSION"));
+    }
 }

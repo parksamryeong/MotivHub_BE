@@ -11,4 +11,6 @@ public interface WorkspaceFileRepository extends JpaRepository<WorkspaceFile, Lo
     @Query("SELECT wf FROM WorkspaceFile wf JOIN FETCH wf.uploadedBy WHERE wf.workspace.id = :workspaceId "
             + "ORDER BY wf.createdAt DESC, wf.id DESC")
     List<WorkspaceFile> findByWorkspaceIdOrderByCreatedAtDesc(@Param("workspaceId") Long workspaceId);
+
+    boolean existsByFileKey(String fileKey);
 }

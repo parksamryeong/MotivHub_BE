@@ -29,6 +29,10 @@ import java.net.http.HttpResponse;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 
 class WorkspaceFileServiceTest extends AbstractIntegrationTest {
 
@@ -36,6 +40,10 @@ class WorkspaceFileServiceTest extends AbstractIntegrationTest {
     @Autowired private WorkspaceService workspaceService;
     @Autowired private UserRepository userRepository;
     @Autowired private WorkspaceMemberRepository workspaceMemberRepository;
+    @Autowired private S3Client s3Client;
+
+    @Value("${aws.s3.bucket}")
+    private String bucket;
 
     private User newUser(String suffix) {
         return userRepository.save(User.create(
@@ -106,7 +114,7 @@ class WorkspaceFileServiceTest extends AbstractIntegrationTest {
         WorkspaceResponse workspace = workspaceService.create(owner.getId(), "파일함 확정 워크스페이스1");
         FilePresignResponse presign = workspaceFileService.presign(
                 owner.getId(), workspace.id(), "report.pdf", "application/pdf", 13L);
-        uploadToPresignedUrl(presign.uploadUrl(), "hello world!!!");
+        uploadToPresignedUrl(presign.uploadUrl(), "hello world!!");
 
         WorkspaceFileResponse confirmed = workspaceFileService.confirm(
                 owner.getId(), workspace.id(), presign.fileKey(), "report.pdf", 13L, "application/pdf");
@@ -241,6 +249,23 @@ class WorkspaceFileServiceTest extends AbstractIntegrationTest {
 
         assertThatThrownBy(() -> workspaceFileService.delete(owner.getId(), workspaceB.id(), file.id()))
                 .isInstanceOf(WorkspaceFileNotFoundException.class);
+    }
+
+    @Test
+    void deletingFileActuallyRemovesS3Object() throws Exception {
+        User owner = newUser("del-s3-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "S3 삭제 확인 워크스페이스");
+        FilePresignResponse presign = workspaceFileService.presign(
+                owner.getId(), workspace.id(), "gone.txt", "text/plain", 5L);
+        uploadToPresignedUrl(presign.uploadUrl(), "hello");
+        WorkspaceFileResponse file = workspaceFileService.confirm(
+                owner.getId(), workspace.id(), presign.fileKey(), "gone.txt", 5L, "text/plain");
+
+        workspaceFileService.delete(owner.getId(), workspace.id(), file.id());
+
+        assertThatThrownBy(() -> s3Client.headObject(
+                HeadObjectRequest.builder().bucket(bucket).key(presign.fileKey()).build()))
+                .isInstanceOf(S3Exception.class);
     }
 
     private void uploadToPresignedUrl(String uploadUrl, String content) throws Exception {

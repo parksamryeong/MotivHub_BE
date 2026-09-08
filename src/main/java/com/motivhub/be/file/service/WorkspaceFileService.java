@@ -16,6 +16,7 @@ import com.motivhub.be.user.repository.UserRepository;
 import com.motivhub.be.workspace.domain.Workspace;
 import com.motivhub.be.workspace.domain.WorkspaceMember;
 import com.motivhub.be.workspace.service.WorkspaceService;
+import jakarta.annotation.PostConstruct;
 import java.time.Duration;
 import java.util.List;
 import java.util.Set;
@@ -27,6 +28,7 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
@@ -61,6 +63,13 @@ public class WorkspaceFileService {
         this.s3Presigner = s3Presigner;
     }
 
+    @PostConstruct
+    void validateBucketConfigured() {
+        if (bucket == null || bucket.isBlank()) {
+            throw new IllegalStateException("aws.s3.bucket 설정이 필요합니다(환경변수 AWS_S3_BUCKET을 설정하세요).");
+        }
+    }
+
     public FilePresignResponse presign(Long userId, Long workspaceId, String fileName, String contentType,
                                         long fileSize) {
         workspaceService.getMembership(workspaceId, userId);
@@ -71,7 +80,6 @@ public class WorkspaceFileService {
         PutObjectRequest putObjectRequest = PutObjectRequest.builder()
                 .bucket(bucket)
                 .key(fileKey)
-                .contentType(contentType)
                 .build();
         PutObjectPresignRequest presignRequest = PutObjectPresignRequest.builder()
                 .signatureDuration(Duration.ofMinutes(5))
@@ -90,18 +98,25 @@ public class WorkspaceFileService {
         if (!fileKey.startsWith(expectedPrefix)) {
             throw new FileUploadNotConfirmedException("이 워크스페이스에 속하지 않는 파일입니다.");
         }
+        HeadObjectResponse headResponse;
         try {
-            s3Client.headObject(HeadObjectRequest.builder().bucket(bucket).key(fileKey).build());
+            headResponse = s3Client.headObject(HeadObjectRequest.builder().bucket(bucket).key(fileKey).build());
         } catch (S3Exception e) {
             if (e.statusCode() == 404) {
                 throw new FileUploadNotConfirmedException("업로드가 완료되지 않았습니다.");
             }
             throw e;
         }
+        long actualFileSize = headResponse.contentLength();
+        validateFile(fileName, actualFileSize);
+        String actualContentType = headResponse.contentType() != null ? headResponse.contentType() : contentType;
+        if (workspaceFileRepository.existsByFileKey(fileKey)) {
+            throw new FileUploadNotConfirmedException("이미 등록된 파일입니다.");
+        }
         User uploadedBy = userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException("유저를 찾을 수 없습니다."));
         WorkspaceFile file = workspaceFileRepository.save(
-                WorkspaceFile.create(workspace, fileKey, fileName, fileSize, contentType, uploadedBy));
+                WorkspaceFile.create(workspace, fileKey, fileName, actualFileSize, actualContentType, uploadedBy));
         return WorkspaceFileResponse.from(file);
     }
 
@@ -150,8 +165,9 @@ public class WorkspaceFileService {
         if (!allowed) {
             throw new WorkspaceFileForbiddenException("업로더 본인이거나 워크스페이스 OWNER만 삭제할 수 있습니다.");
         }
-        s3Client.deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(file.getFileKey()).build());
+        String fileKey = file.getFileKey();
         workspaceFileRepository.delete(file);
+        s3Client.deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(fileKey).build());
     }
 
     private WorkspaceFile findFile(Long workspaceId, Long fileId) {
