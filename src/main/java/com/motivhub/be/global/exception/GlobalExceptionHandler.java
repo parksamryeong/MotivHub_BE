@@ -3,6 +3,8 @@ package com.motivhub.be.global.exception;
 import com.motivhub.be.auth.exception.InvalidCodeException;
 import com.motivhub.be.auth.exception.InvalidRefreshTokenException;
 import com.motivhub.be.auth.exception.LogoutForbiddenException;
+import com.motivhub.be.file.exception.BlockedFileExtensionException;
+import com.motivhub.be.file.exception.FileTooLargeException;
 import com.motivhub.be.task.exception.InvalidTaskStatusTransitionException;
 import com.motivhub.be.task.exception.TaskChecklistItemNotFoundException;
 import com.motivhub.be.task.exception.TaskCommentForbiddenException;
@@ -163,5 +165,17 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleTaskCommentForbidden(TaskCommentForbiddenException e) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(ErrorResponse.of("TASK_COMMENT_FORBIDDEN", e.getMessage()));
+    }
+
+    @ExceptionHandler(FileTooLargeException.class)
+    public ResponseEntity<ErrorResponse> handleFileTooLarge(FileTooLargeException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("FILE_TOO_LARGE", e.getMessage()));
+    }
+
+    @ExceptionHandler(BlockedFileExtensionException.class)
+    public ResponseEntity<ErrorResponse> handleBlockedFileExtension(BlockedFileExtensionException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("BLOCKED_FILE_EXTENSION", e.getMessage()));
     }
 }
