@@ -3,6 +3,7 @@ package com.motivhub.be.file.controller;
 import com.motivhub.be.file.dto.FileDownloadResponse;
 import com.motivhub.be.file.dto.FilePresignRequest;
 import com.motivhub.be.file.dto.FilePresignResponse;
+import com.motivhub.be.file.dto.WorkspaceFileCategoryUpdateRequest;
 import com.motivhub.be.file.dto.WorkspaceFileConfirmRequest;
 import com.motivhub.be.file.dto.WorkspaceFileResponse;
 import com.motivhub.be.file.service.WorkspaceFileService;
@@ -12,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -53,6 +55,13 @@ public class WorkspaceFileController {
     public ResponseEntity<FileDownloadResponse> download(
             @AuthenticationPrincipal Long userId, @PathVariable Long workspaceId, @PathVariable Long fileId) {
         return ResponseEntity.ok(workspaceFileService.getDownloadUrl(userId, workspaceId, fileId));
+    }
+
+    @PatchMapping("/api/workspaces/{workspaceId}/files/{fileId}")
+    public ResponseEntity<WorkspaceFileResponse> updateCategory(
+            @AuthenticationPrincipal Long userId, @PathVariable Long workspaceId, @PathVariable Long fileId,
+            @Valid @RequestBody WorkspaceFileCategoryUpdateRequest request) {
+        return ResponseEntity.ok(workspaceFileService.updateCategory(userId, workspaceId, fileId, request.category()));
     }
 
     @DeleteMapping("/api/workspaces/{workspaceId}/files/{fileId}")

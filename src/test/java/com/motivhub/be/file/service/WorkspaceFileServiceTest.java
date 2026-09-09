@@ -209,6 +209,70 @@ class WorkspaceFileServiceTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void memberCanUpdateCategoryOfAnyFile() throws Exception {
+        User owner = newUser("cat-owner1");
+        User member = newUser("cat-member1");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "카테고리 수정 워크스페이스1");
+        joinAsMember(workspace.id(), member);
+        WorkspaceFileResponse file = confirmUploadedFile(owner, workspace.id(), "receipt.pdf");
+
+        WorkspaceFileResponse updated = workspaceFileService.updateCategory(
+                member.getId(), workspace.id(), file.id(), "영수증");
+
+        assertThat(updated.category()).isEqualTo("영수증");
+    }
+
+    @Test
+    void updatingCategoryToNullClearsIt() throws Exception {
+        User owner = newUser("cat-owner2");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "카테고리 수정 워크스페이스2");
+        FilePresignResponse presign = workspaceFileService.presign(
+                owner.getId(), workspace.id(), "tagged.pdf", "application/pdf", 5L);
+        uploadToPresignedUrl(presign.uploadUrl(), "hello");
+        WorkspaceFileResponse file = workspaceFileService.confirm(
+                owner.getId(), workspace.id(), presign.fileKey(), "tagged.pdf", 5L, "application/pdf", "영수증");
+
+        WorkspaceFileResponse updated = workspaceFileService.updateCategory(
+                owner.getId(), workspace.id(), file.id(), null);
+
+        assertThat(updated.category()).isNull();
+    }
+
+    @Test
+    void nonMemberCannotUpdateCategory() throws Exception {
+        User owner = newUser("cat-owner3");
+        User outsider = newUser("cat-outsider3");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "카테고리 수정 워크스페이스3");
+        WorkspaceFileResponse file = confirmUploadedFile(owner, workspace.id(), "outside.pdf");
+
+        assertThatThrownBy(() -> workspaceFileService.updateCategory(
+                outsider.getId(), workspace.id(), file.id(), "분류"))
+                .isInstanceOf(NotWorkspaceMemberException.class);
+    }
+
+    @Test
+    void updatingCategoryOfUnknownFileThrows() {
+        User owner = newUser("cat-owner4");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "카테고리 수정 워크스페이스4");
+
+        assertThatThrownBy(() -> workspaceFileService.updateCategory(
+                owner.getId(), workspace.id(), 999_999L, "분류"))
+                .isInstanceOf(WorkspaceFileNotFoundException.class);
+    }
+
+    @Test
+    void updatingCategoryFromDifferentWorkspaceThrows() throws Exception {
+        User owner = newUser("cat-owner5");
+        WorkspaceResponse workspaceA = workspaceService.create(owner.getId(), "카테고리 수정 워크스페이스A");
+        WorkspaceResponse workspaceB = workspaceService.create(owner.getId(), "카테고리 수정 워크스페이스B");
+        WorkspaceFileResponse file = confirmUploadedFile(owner, workspaceA.id(), "cross-cat.pdf");
+
+        assertThatThrownBy(() -> workspaceFileService.updateCategory(
+                owner.getId(), workspaceB.id(), file.id(), "분류"))
+                .isInstanceOf(WorkspaceFileNotFoundException.class);
+    }
+
+    @Test
     void downloadingReturnsWorkingPresignedUrl() throws Exception {
         User owner = newUser("dl-owner1");
         WorkspaceResponse workspace = workspaceService.create(owner.getId(), "다운로드 워크스페이스1");

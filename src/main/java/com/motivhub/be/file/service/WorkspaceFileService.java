@@ -170,6 +170,14 @@ public class WorkspaceFileService {
         s3Client.deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(fileKey).build());
     }
 
+    @Transactional
+    public WorkspaceFileResponse updateCategory(Long userId, Long workspaceId, Long fileId, String category) {
+        workspaceService.getMembership(workspaceId, userId);
+        WorkspaceFile file = findFile(workspaceId, fileId);
+        file.updateCategory(category);
+        return WorkspaceFileResponse.from(file);
+    }
+
     private WorkspaceFile findFile(Long workspaceId, Long fileId) {
         return workspaceFileRepository.findById(fileId)
                 .filter(file -> file.getWorkspace().getId().equals(workspaceId))

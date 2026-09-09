@@ -72,4 +72,8 @@ public class WorkspaceFile {
     public boolean isUploadedBy(Long userId) {
         return this.uploadedBy.getId().equals(userId);
     }
+
+    public void updateCategory(String category) {
+        this.category = category;
+    }
 }
