@@ -41,22 +41,22 @@ export default function (data) {
     let res;
     let label;
     if (roll < 0.4) {
-        res = http.get(`${BASE_URL}/api/workspaces/${workspaceId}/tasks`, { headers });
         label = 'GET /api/workspaces/{id}/tasks';
+        res = http.get(`${BASE_URL}/api/workspaces/${workspaceId}/tasks`, { headers, tags: { name: label } });
     } else if (roll < 0.7) {
         const taskId = randomTaskIdForWorkspace(workspaceId);
-        res = http.get(`${BASE_URL}/api/tasks/${taskId}`, { headers });
         label = 'GET /api/tasks/{id} (normal)';
+        res = http.get(`${BASE_URL}/api/tasks/${taskId}`, { headers, tags: { name: label } });
     } else if (roll < 0.85) {
-        res = http.get(`${BASE_URL}/api/workspaces/${workspaceId}/files`, { headers });
         label = 'GET /api/workspaces/{id}/files';
+        res = http.get(`${BASE_URL}/api/workspaces/${workspaceId}/files`, { headers, tags: { name: label } });
     } else if (roll < 0.925) {
-        res = http.get(`${BASE_URL}/api/issues`, { headers });
         label = 'GET /api/issues';
+        res = http.get(`${BASE_URL}/api/issues`, { headers, tags: { name: label } });
     } else {
         const issueId = randomFrom(ISSUE_IDS);
-        res = http.get(`${BASE_URL}/api/issues/${issueId}`, { headers });
         label = 'GET /api/issues/{id}';
+        res = http.get(`${BASE_URL}/api/issues/${issueId}`, { headers, tags: { name: label } });
     }
 
     check(res, { [`${label} returns 200`]: (r) => r.status === 200 });

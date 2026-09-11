@@ -85,6 +85,8 @@ docker compose exec -T mysql mysql -uroot -proot motivhub < load-test/seed-read-
 # K6_WEB_DASHBOARD=true를 붙이면 실행 중 http://127.0.0.1:5665 에서 k6 자체 라이브 대시보드(TPS/응답시간/VU)를
 # 볼 수 있다. http://localhost:13000(Grafana, admin/admin)과 나란히 열어두면 클라이언트/서버 양쪽을 동시에 관찰 가능.
 
+mkdir -p load-test/results
+
 # 시나리오 1: 일반 혼합 (태스크 목록/상세, 파일함 목록, 이슈 목록/상세) — VU 10 -> 20 -> 30, 레벨별 1분씩
 K6_WEB_DASHBOARD=true k6 run -u 10 -d 1m -e JWT_SECRET=k6loadtestdevsecretexactly32byte load-test/mixed-read-load-test.js --summary-export=load-test/results/mixed-vu10.json
 K6_WEB_DASHBOARD=true k6 run -u 20 -d 1m -e JWT_SECRET=k6loadtestdevsecretexactly32byte load-test/mixed-read-load-test.js --summary-export=load-test/results/mixed-vu20.json

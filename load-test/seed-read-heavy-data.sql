@@ -1,3 +1,5 @@
+-- 로컬 개발 DB 전용. 90001~90076 범위를 무조건 DELETE하므로 절대 운영/공용 DB에 실행하지 말 것.
+
 -- 재실행 가능하도록 이번 시드가 만드는 범위를 먼저 정리(자식 → 부모 순서로 삭제)
 DELETE FROM task_activity_log WHERE task_id BETWEEN 90001 AND 90076;
 DELETE FROM task_comment WHERE task_id BETWEEN 90001 AND 90076;
@@ -8,6 +10,7 @@ DELETE FROM issue_comment WHERE issue_id BETWEEN 90001 AND 90025;
 DELETE FROM issue WHERE id BETWEEN 90001 AND 90025;
 DELETE FROM workspace_file WHERE workspace_id BETWEEN 90001 AND 90003;
 DELETE FROM workspace_member WHERE workspace_id BETWEEN 90001 AND 90003;
+DELETE FROM workspace_invite WHERE workspace_id BETWEEN 90001 AND 90003;
 DELETE FROM workspace WHERE id BETWEEN 90001 AND 90003;
 
 -- 워크스페이스 3개
