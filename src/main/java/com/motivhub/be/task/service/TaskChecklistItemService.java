@@ -54,13 +54,14 @@ public class TaskChecklistItemService {
         Task task = taskService.getTask(taskId);
         taskAccessPolicy.requireEditPermission(task, userId);
         TaskChecklistItem item = findItem(taskId, itemId);
+        boolean wasAlreadyDone = item.isDone();
         if (content != null) {
             item.updateContent(content);
         }
         if (isDone != null) {
             item.markDone(isDone);
         }
-        if (Boolean.TRUE.equals(isDone) && isAllDone(taskId)) {
+        if (Boolean.TRUE.equals(isDone) && !wasAlreadyDone && isAllDone(taskId)) {
             eventPublisher.publishEvent(new ChecklistCompletedEvent(taskId));
         }
         return TaskChecklistItemResponse.from(item);

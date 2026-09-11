@@ -40,47 +40,63 @@ public class NotificationEventListener {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onAssigneeAdded(AssigneeAddedEvent event) {
-        Task task = taskService.getTask(event.taskId());
-        String message = "'" + task.getName() + "'의 담당자로 지정되었습니다.";
-        notifySafely(event.newAssigneeUserId(), NotificationType.ASSIGNEE_ADDED,
-                NotificationTargetType.TASK, task.getId(), message);
+        handleSafely("onAssigneeAdded", () -> {
+            Task task = taskService.getTask(event.taskId());
+            String message = "'" + task.getName() + "'의 담당자로 지정되었습니다.";
+            notifySafely(event.newAssigneeUserId(), NotificationType.ASSIGNEE_ADDED,
+                    NotificationTargetType.TASK, task.getId(), message);
+        });
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onTaskCommentCreated(TaskCommentCreatedEvent event) {
-        Task task = taskService.getTask(event.taskId());
-        Set<Long> recipientIds = assigneeIds(task.getId());
-        recipientIds.add(task.getCreatedBy().getId());
-        recipientIds.remove(event.authorId());
-        String message = "'" + event.authorNickname() + "'님이 '" + task.getName() + "'에 댓글을 남겼습니다.";
-        for (Long recipientId : recipientIds) {
-            notifySafely(recipientId, NotificationType.TASK_COMMENT_ADDED,
-                    NotificationTargetType.TASK, task.getId(), message);
-        }
+        handleSafely("onTaskCommentCreated", () -> {
+            Task task = taskService.getTask(event.taskId());
+            Set<Long> recipientIds = assigneeIds(task.getId());
+            recipientIds.add(task.getCreatedBy().getId());
+            recipientIds.remove(event.authorId());
+            String message = "'" + event.authorNickname() + "'님이 '" + task.getName() + "'에 댓글을 남겼습니다.";
+            for (Long recipientId : recipientIds) {
+                notifySafely(recipientId, NotificationType.TASK_COMMENT_ADDED,
+                        NotificationTargetType.TASK, task.getId(), message);
+            }
+        });
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onChecklistCompleted(ChecklistCompletedEvent event) {
-        Task task = taskService.getTask(event.taskId());
-        String message = "'" + task.getName() + "'의 체크리스트를 모두 완료했습니다.";
-        for (Long recipientId : assigneeIds(task.getId())) {
-            notifySafely(recipientId, NotificationType.CHECKLIST_COMPLETED,
-                    NotificationTargetType.TASK, task.getId(), message);
-        }
+        handleSafely("onChecklistCompleted", () -> {
+            Task task = taskService.getTask(event.taskId());
+            String message = "'" + task.getName() + "'의 체크리스트를 모두 완료했습니다.";
+            for (Long recipientId : assigneeIds(task.getId())) {
+                notifySafely(recipientId, NotificationType.CHECKLIST_COMPLETED,
+                        NotificationTargetType.TASK, task.getId(), message);
+            }
+        });
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onDueDateApproaching(DueDateApproachingEvent event) {
-        Task task = taskService.getTask(event.taskId());
-        Set<Long> recipientIds = assigneeIds(task.getId());
-        workspaceMemberRepository.findByWorkspaceIdAndRole(task.getWorkspace().getId(), WorkspaceRole.OWNER)
-                .ifPresent(owner -> recipientIds.add(owner.getUser().getId()));
-        String message = "'" + task.getName() + "' 마감일이 이틀 남았습니다.";
-        for (Long recipientId : recipientIds) {
-            if (!notificationService.alreadyNotifiedToday(recipientId, NotificationType.DUE_DATE_APPROACHING, task.getId())) {
-                notifySafely(recipientId, NotificationType.DUE_DATE_APPROACHING,
-                        NotificationTargetType.TASK, task.getId(), message);
+        handleSafely("onDueDateApproaching", () -> {
+            Task task = taskService.getTask(event.taskId());
+            Set<Long> recipientIds = assigneeIds(task.getId());
+            workspaceMemberRepository.findByWorkspaceIdAndRole(task.getWorkspace().getId(), WorkspaceRole.OWNER)
+                    .ifPresent(owner -> recipientIds.add(owner.getUser().getId()));
+            String message = "'" + task.getName() + "' 마감일이 이틀 남았습니다.";
+            for (Long recipientId : recipientIds) {
+                if (!notificationService.alreadyNotifiedToday(recipientId, NotificationType.DUE_DATE_APPROACHING, task.getId())) {
+                    notifySafely(recipientId, NotificationType.DUE_DATE_APPROACHING,
+                            NotificationTargetType.TASK, task.getId(), message);
+                }
             }
+        });
+    }
+
+    private void handleSafely(String handlerName, Runnable body) {
+        try {
+            body.run();
+        } catch (Exception e) {
+            log.warn("알림 이벤트 처리 실패 - handler={}", handlerName, e);
         }
     }
 

@@ -76,8 +76,4 @@ public class Notification {
             this.readAt = LocalDateTime.now();
         }
     }
-
-    public boolean isRecipient(Long userId) {
-        return this.recipient.getId().equals(userId);
-    }
 }

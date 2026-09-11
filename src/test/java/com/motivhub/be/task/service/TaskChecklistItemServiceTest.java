@@ -208,4 +208,28 @@ class TaskChecklistItemServiceTest extends AbstractIntegrationTest {
 
         assertThat(notificationService.list(assignee.getId(), PageRequest.of(0, 20)).getContent()).isEmpty();
     }
+
+    @Test
+    void recheckingAlreadyDoneItemDoesNotNotifyAgain() {
+        User owner = newUser("recheck-owner");
+        User assignee = newUser("recheck-assignee");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "체크리스트 재확인 워크스페이스");
+        joinAsMember(workspace.id(), assignee);
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("체크리스트 재확인 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5),
+                        List.of(assignee.getId())));
+        TaskChecklistItemResponse item = taskChecklistItemService.create(owner.getId(), task.id(), "항목 A");
+
+        TestTransaction.flagForCommit();
+        taskChecklistItemService.update(owner.getId(), task.id(), item.id(), null, true);
+        TestTransaction.end();
+        TestTransaction.start();
+
+        TestTransaction.flagForCommit();
+        taskChecklistItemService.update(owner.getId(), task.id(), item.id(), null, true);
+        TestTransaction.end();
+        TestTransaction.start();
+
+        assertThat(notificationService.list(assignee.getId(), PageRequest.of(0, 20)).getContent()).hasSize(1);
+    }
 }

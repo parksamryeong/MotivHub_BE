@@ -207,3 +207,46 @@
   코드를 호출하는 테스트의 트랜잭션 가정도 같이 깨질 수 있다는 걸 다시 확인.
 
 ---
+
+## [2026-09-12] "방금 100% 완료됨"이 계획서에서 "지금 100%임"으로 바뀌어 중복 알림을 만들던 문제
+
+- **상황**: 알림 기능 전체 브랜치(7개 태스크) 최종 리뷰(가장 강력한 모델)에서 발견. 개별 태스크 리뷰
+  때는 안 걸렸다 — 태스크 5 리뷰가 요구한 테스트 2개(마지막 항목 완료 시 알림 발행 / 마지막 아닌 항목
+  완료 시 미발행)가 둘 다 통과했고, 코드도 계획서 그대로였다.
+- **원인**: 설계 문서(`docs/superpowers/specs/2026-09-11-task-notifications-design.md`)는 체크리스트 완료
+  알림 트리거를 "그 태스크의 체크리스트 전부가 **이제** `is_done=true`인지 재계산해서 **방금 100%로
+  넘어갔으면** 발행"이라고 적었다. 그런데 이 프로즈를 구현 계획서(`docs/superpowers/plans/2026-09-11-
+  task-notifications.md`)의 실제 코드로 옮기는 과정에서 "방금 전환됐는가"라는 조건이 빠지고 "지금
+  전부 완료 상태인가"만 남았다:
+  ```java
+  if (Boolean.TRUE.equals(isDone) && isAllDone(taskId)) {
+      eventPublisher.publishEvent(new ChecklistCompletedEvent(taskId));
+  }
+  ```
+  이 조건은 "방금 마지막 항목을 체크해서 100%가 됨"과 "이미 100%인 태스크의 항목을 다시 한번 true로
+  체크(멱등적 PATCH, 재시도, 더블클릭 등)"를 구분하지 못한다. 둘 다 `isDone==true`이고 그 직후
+  `isAllDone(taskId)`도 true라서, 후자에서도 알림이 또 나간다. 계획서가 요구한 테스트 2개는 둘 다
+  "전환되는 순간"만 검증했지 "이미 완료된 걸 다시 체크"하는 경로는 아예 안 건드려서, 통과해도 이 버그를
+  못 잡는 구조였다.
+- **해결**: 항목을 수정하기 **전에** 그 항목이 이미 done 상태였는지 캡처해두고, 그 값이 false였을 때만
+  이벤트를 발행하도록 조건을 추가:
+  ```java
+  TaskChecklistItem item = findItem(taskId, itemId);
+  boolean wasAlreadyDone = item.isDone();
+  ...
+  if (Boolean.TRUE.equals(isDone) && !wasAlreadyDone && isAllDone(taskId)) {
+      eventPublisher.publishEvent(new ChecklistCompletedEvent(taskId));
+  }
+  ```
+  이미 완료된 항목을 다시 `true`로 PATCH해도 알림이 재발행되지 않는지 확인하는 회귀 테스트
+  (`recheckingAlreadyDoneItemDoesNotNotifyAgain`)를 추가했다.
+- **결과**: "스펙 프로즈의 시간적 뉘앙스(방금 vs 지금)가 코드로 옮겨지면서 조용히 사라질 수 있다"는 걸
+  남긴 사례. 개별 태스크 리뷰가 요구한 테스트는 계획서 자체가 정해준 것이라, 계획서의 요구사항 자체가
+  불완전하면 그 테스트도 똑같이 불완전해져서 못 잡는다 — 이런 종류의 버그는 "계획서가 스펙의 의도를
+  정확히 담았는가"를 다시 묻는 전체 리뷰에서만 걸린다는 걸 보여준 케이스. 같은 최종 리뷰에서
+  `@TransactionalEventListener(AFTER_COMMIT)` 예외 격리가 `notify()` 호출 하나만 감싸고 앞단(`getTask`
+  등)은 안 감싸져 있던 것도 같이 발견돼 고쳤다 — 커밋 이후 예외가 새어나가 성공한 요청이 500으로 보이는
+  문제를 막으려던 원래 의도(`docs/troubleshooting.md`의 2026-09-11 AFTER_COMMIT 항목)가 한 겹 얕게만
+  적용돼 있었던 것.
+
+---
