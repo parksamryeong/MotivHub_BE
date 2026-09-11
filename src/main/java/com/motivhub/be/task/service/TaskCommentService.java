@@ -5,6 +5,7 @@ import com.motivhub.be.task.domain.TaskComment;
 import com.motivhub.be.task.dto.TaskCommentResponse;
 import com.motivhub.be.task.exception.TaskCommentForbiddenException;
 import com.motivhub.be.task.exception.TaskCommentNotFoundException;
+import com.motivhub.be.task.event.TaskCommentCreatedEvent;
 import com.motivhub.be.task.repository.TaskCommentRepository;
 import com.motivhub.be.user.domain.User;
 import com.motivhub.be.user.exception.UserNotFoundException;
@@ -12,6 +13,7 @@ import com.motivhub.be.user.repository.UserRepository;
 import com.motivhub.be.workspace.domain.WorkspaceMember;
 import com.motivhub.be.workspace.service.WorkspaceService;
 import java.util.List;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,13 +25,16 @@ public class TaskCommentService {
     private final TaskService taskService;
     private final WorkspaceService workspaceService;
     private final UserRepository userRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     public TaskCommentService(TaskCommentRepository taskCommentRepository, TaskService taskService,
-                               WorkspaceService workspaceService, UserRepository userRepository) {
+                               WorkspaceService workspaceService, UserRepository userRepository,
+                               ApplicationEventPublisher eventPublisher) {
         this.taskCommentRepository = taskCommentRepository;
         this.taskService = taskService;
         this.workspaceService = workspaceService;
         this.userRepository = userRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
@@ -39,6 +44,7 @@ public class TaskCommentService {
         User author = userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException("유저를 찾을 수 없습니다."));
         TaskComment comment = taskCommentRepository.save(TaskComment.create(task, author, content));
+        eventPublisher.publishEvent(new TaskCommentCreatedEvent(taskId, userId, author.getNickname()));
         return TaskCommentResponse.from(comment);
     }
 

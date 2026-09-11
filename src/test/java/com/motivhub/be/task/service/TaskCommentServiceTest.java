@@ -3,6 +3,8 @@ package com.motivhub.be.task.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.motivhub.be.notification.dto.NotificationResponse;
+import com.motivhub.be.notification.service.NotificationService;
 import com.motivhub.be.support.AbstractIntegrationTest;
 import com.motivhub.be.task.dto.TaskCommentResponse;
 import com.motivhub.be.task.dto.TaskCreateRequest;
@@ -24,6 +26,8 @@ import java.time.LocalDate;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.test.context.transaction.TestTransaction;
 
 class TaskCommentServiceTest extends AbstractIntegrationTest {
 
@@ -32,6 +36,7 @@ class TaskCommentServiceTest extends AbstractIntegrationTest {
     @Autowired private WorkspaceService workspaceService;
     @Autowired private WorkspaceMemberRepository workspaceMemberRepository;
     @Autowired private UserRepository userRepository;
+    @Autowired private NotificationService notificationService;
 
     private User newUser(String suffix) {
         return userRepository.save(User.create(
@@ -249,6 +254,25 @@ class TaskCommentServiceTest extends AbstractIntegrationTest {
 
         assertThatThrownBy(() -> taskCommentService.update(author.getId(), task.id(), created.id(), "추방 후 수정 시도"))
                 .isInstanceOf(NotWorkspaceMemberException.class);
+    }
+
+    @Test
+    void creatingCommentNotifiesAssigneesAndCreatorButNotAuthor() {
+        User owner = newUser("comment-notify-owner");
+        User assignee = newUser("comment-notify-assignee");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "댓글 알림 워크스페이스");
+        joinAsMember(workspace.id(), assignee);
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("댓글 알림 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5),
+                        List.of(assignee.getId())));
+
+        TestTransaction.flagForCommit();
+        taskCommentService.create(assignee.getId(), task.id(), "담당자가 남긴 댓글");
+        TestTransaction.end();
+        TestTransaction.start();
+
+        assertThat(notificationService.list(owner.getId(), PageRequest.of(0, 20)).getContent()).hasSize(1);
+        assertThat(notificationService.list(assignee.getId(), PageRequest.of(0, 20)).getContent()).isEmpty();
     }
 
     @Test
