@@ -14,6 +14,7 @@ import com.motivhub.be.task.repository.TaskCommentRepository;
 import com.motivhub.be.task.repository.TaskRepository;
 import com.motivhub.be.task.domain.TaskAssignee;
 import com.motivhub.be.task.event.AssigneeAddedEvent;
+import com.motivhub.be.task.event.TaskChangedEvent;
 import com.motivhub.be.task.exception.InvalidTaskStatusTransitionException;
 import com.motivhub.be.user.domain.User;
 import com.motivhub.be.user.dto.UserSummary;
@@ -132,6 +133,7 @@ public class TaskService {
             taskActivityLogService.record(task, actor, TaskActivityAction.UPDATE_CONTENT,
                     "description", oldDescription, task.getDescription());
         }
+        eventPublisher.publishEvent(new TaskChangedEvent(taskId));
         return TaskResponse.of(task, getAssigneeSummaries(taskId));
     }
 
@@ -156,6 +158,7 @@ public class TaskService {
             taskActivityLogService.record(task, actor, TaskActivityAction.CHANGE_STATUS,
                     "status", oldStatus.name(), task.getStatus().name());
         }
+        eventPublisher.publishEvent(new TaskChangedEvent(taskId));
         return TaskResponse.of(task, getAssigneeSummaries(taskId));
     }
 
@@ -190,6 +193,7 @@ public class TaskService {
             taskActivityLogService.record(task, actor, TaskActivityAction.CHANGE_STATUS,
                     "status", oldStatus.name(), newStatus.name());
         }
+        eventPublisher.publishEvent(new TaskChangedEvent(taskId));
         return TaskResponse.of(task, getAssigneeSummaries(taskId));
     }
 
@@ -206,6 +210,7 @@ public class TaskService {
                     .orElseThrow(() -> new UserNotFoundException("유저를 찾을 수 없습니다."));
             taskActivityLogService.record(task, actor, TaskActivityAction.ADD_ASSIGNEE, "assignee", null, target.getNickname());
             eventPublisher.publishEvent(new AssigneeAddedEvent(taskId, targetUserId));
+            eventPublisher.publishEvent(new TaskChangedEvent(taskId));
         }
         return TaskResponse.of(task, getAssigneeSummaries(taskId));
     }
@@ -221,6 +226,7 @@ public class TaskService {
                             .orElseThrow(() -> new UserNotFoundException("유저를 찾을 수 없습니다."));
                     taskActivityLogService.record(task, actor, TaskActivityAction.REMOVE_ASSIGNEE,
                             "assignee", assignee.getUser().getNickname(), null);
+                    eventPublisher.publishEvent(new TaskChangedEvent(taskId));
                 });
         return TaskResponse.of(task, getAssigneeSummaries(taskId));
     }
