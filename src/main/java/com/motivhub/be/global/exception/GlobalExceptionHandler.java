@@ -10,6 +10,7 @@ import com.motivhub.be.file.exception.WorkspaceFileForbiddenException;
 import com.motivhub.be.file.exception.WorkspaceFileNotFoundException;
 import com.motivhub.be.issue.exception.IssueForbiddenException;
 import com.motivhub.be.issue.exception.IssueNotFoundException;
+import com.motivhub.be.notification.exception.NotificationNotFoundException;
 import com.motivhub.be.task.exception.InvalidTaskStatusTransitionException;
 import com.motivhub.be.task.exception.TaskChecklistItemNotFoundException;
 import com.motivhub.be.task.exception.TaskCommentForbiddenException;
@@ -212,5 +213,11 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleIssueNotFound(IssueNotFoundException e) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(ErrorResponse.of("ISSUE_NOT_FOUND", e.getMessage()));
+    }
+
+    @ExceptionHandler(NotificationNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNotificationNotFound(NotificationNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("NOTIFICATION_NOT_FOUND", e.getMessage()));
     }
 }
