@@ -73,3 +73,28 @@ k6 run -e JWT_SECRET=k6loadtestdevsecretexactly32byte load-test/protected-api-lo
 > 위 "로컬 실행"의 `JWT_SECRET`은 32자 이상이면 되지만, 부하테스트에서는 반드시 이 값을 정확히 그대로 사용해야 한다. `Keys.hmacShaKeyFor()`가 시크릿 바이트 길이로 서명 알고리즘(HS256/384/512)을 정하기 때문에, k6와 앱이 다른 값을 쓰면 토큰이 401로 거부된다.
 
 부하를 주는 동안 `http://localhost:13000`의 Grafana 대시보드에서 TPS/p95/JVM 힙/HikariCP 커넥션 변화를 관찰할 수 있다.
+
+### 부하테스트 확장 — 읽기 위주 신규 기능 API
+
+워크스페이스 태스크/파일함/이슈게시판까지 포함한 확장 시나리오. 위 "부하테스트(k6)"의 인프라 기동·시드
+유저·앱 기동을 그대로 마친 뒤, 시드 데이터를 하나 더 넣고 두 시나리오를 실행한다.
+
+```bash
+docker compose exec -T mysql mysql -uroot -proot motivhub < load-test/seed-read-heavy-data.sql
+
+# K6_WEB_DASHBOARD=true를 붙이면 실행 중 http://127.0.0.1:5665 에서 k6 자체 라이브 대시보드(TPS/응답시간/VU)를
+# 볼 수 있다. http://localhost:13000(Grafana, admin/admin)과 나란히 열어두면 클라이언트/서버 양쪽을 동시에 관찰 가능.
+
+# 시나리오 1: 일반 혼합 (태스크 목록/상세, 파일함 목록, 이슈 목록/상세) — VU 10 -> 20 -> 30, 레벨별 1분씩
+K6_WEB_DASHBOARD=true k6 run -u 10 -d 1m -e JWT_SECRET=k6loadtestdevsecretexactly32byte load-test/mixed-read-load-test.js --summary-export=load-test/results/mixed-vu10.json
+K6_WEB_DASHBOARD=true k6 run -u 20 -d 1m -e JWT_SECRET=k6loadtestdevsecretexactly32byte load-test/mixed-read-load-test.js --summary-export=load-test/results/mixed-vu20.json
+K6_WEB_DASHBOARD=true k6 run -u 30 -d 1m -e JWT_SECRET=k6loadtestdevsecretexactly32byte load-test/mixed-read-load-test.js --summary-export=load-test/results/mixed-vu30.json
+
+# 시나리오 2: 극단 케이스(체크리스트/댓글/활동로그 300개씩 달린 태스크 상세만) — VU 5 -> 10 -> 15
+K6_WEB_DASHBOARD=true k6 run -u 5  -d 1m -e JWT_SECRET=k6loadtestdevsecretexactly32byte load-test/heavy-task-stress-test.js --summary-export=load-test/results/heavy-vu5.json
+K6_WEB_DASHBOARD=true k6 run -u 10 -d 1m -e JWT_SECRET=k6loadtestdevsecretexactly32byte load-test/heavy-task-stress-test.js --summary-export=load-test/results/heavy-vu10.json
+K6_WEB_DASHBOARD=true k6 run -u 15 -d 1m -e JWT_SECRET=k6loadtestdevsecretexactly32byte load-test/heavy-task-stress-test.js --summary-export=load-test/results/heavy-vu15.json
+```
+
+레벨을 하나씩 올려가며 실패율/p95가 어떻게 변하는지 비교한다 — 실패율이 0%를 벗어나거나 p95가 전
+단계 대비 2배 이상 뛰면 그 지점을 병목 시작점으로 본다. 발견 사항은 `docs/troubleshooting.md`에 기록한다.
