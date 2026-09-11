@@ -56,9 +56,19 @@ AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test ./gradlew bootRun
 ```bash
 docker compose up -d
 docker compose exec -T mysql mysql -uroot -proot motivhub < load-test/seed-users.sql
-JWT_SECRET=k6loadtestdevsecretexactly32byte ./gradlew bootRun
+docker compose exec localstack awslocal s3 mb s3://motivhub-local
+JWT_SECRET=k6loadtestdevsecretexactly32byte \
+AWS_S3_ENDPOINT_OVERRIDE=http://localhost:4566 AWS_S3_BUCKET=motivhub-local \
+AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test \
+GOOGLE_CLIENT_ID=dummy GOOGLE_CLIENT_SECRET=dummy \
+GITHUB_CLIENT_ID=dummy GITHUB_CLIENT_SECRET=dummy \
+KAKAO_CLIENT_ID=dummy KAKAO_CLIENT_SECRET=dummy \
+NAVER_CLIENT_ID=dummy NAVER_CLIENT_SECRET=dummy \
+./gradlew bootRun
 k6 run -e JWT_SECRET=k6loadtestdevsecretexactly32byte load-test/protected-api-load-test.js
 ```
+
+> `bootRun`은 위 "로컬 실행" 섹션의 필수 환경 변수(OAuth 클라이언트, `JWT_SECRET`)를 전부 요구하고, 파일함 기능 도입 이후로는 `AWS_S3_BUCKET`도 기동 시점에 `WorkspaceFileService`가 검증한다 — 빠뜨리면 `bootRun`이 즉시 실패한다.
 
 > 위 "로컬 실행"의 `JWT_SECRET`은 32자 이상이면 되지만, 부하테스트에서는 반드시 이 값을 정확히 그대로 사용해야 한다. `Keys.hmacShaKeyFor()`가 시크릿 바이트 길이로 서명 알고리즘(HS256/384/512)을 정하기 때문에, k6와 앱이 다른 값을 쓰면 토큰이 401로 거부된다.
 
