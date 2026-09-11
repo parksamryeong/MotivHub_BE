@@ -3,6 +3,8 @@ package com.motivhub.be.task.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.motivhub.be.notification.dto.NotificationResponse;
+import com.motivhub.be.notification.service.NotificationService;
 import com.motivhub.be.support.AbstractIntegrationTest;
 import com.motivhub.be.task.dto.TaskChecklistItemResponse;
 import com.motivhub.be.task.dto.TaskCreateRequest;
@@ -21,6 +23,8 @@ import java.time.LocalDate;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.test.context.transaction.TestTransaction;
 
 class TaskChecklistItemServiceTest extends AbstractIntegrationTest {
 
@@ -29,6 +33,7 @@ class TaskChecklistItemServiceTest extends AbstractIntegrationTest {
     @Autowired private WorkspaceService workspaceService;
     @Autowired private UserRepository userRepository;
     @Autowired private WorkspaceMemberRepository workspaceMemberRepository;
+    @Autowired private NotificationService notificationService;
 
     private User newUser(String suffix) {
         return userRepository.save(User.create(
@@ -158,5 +163,49 @@ class TaskChecklistItemServiceTest extends AbstractIntegrationTest {
 
         assertThatThrownBy(() -> taskChecklistItemService.update(owner.getId(), task.id(), 999_999L, "x", null))
                 .isInstanceOf(com.motivhub.be.task.exception.TaskChecklistItemNotFoundException.class);
+    }
+
+    @Test
+    void completingLastItemNotifiesAssignees() {
+        User owner = newUser("checklist-notify-owner");
+        User assignee = newUser("checklist-notify-assignee");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "체크리스트 완료 알림 워크스페이스");
+        joinAsMember(workspace.id(), assignee);
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("체크리스트 완료 알림 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5),
+                        List.of(assignee.getId())));
+        TaskChecklistItemResponse itemA = taskChecklistItemService.create(owner.getId(), task.id(), "항목 A");
+        TaskChecklistItemResponse itemB = taskChecklistItemService.create(owner.getId(), task.id(), "항목 B");
+        taskChecklistItemService.update(owner.getId(), task.id(), itemA.id(), null, true);
+
+        TestTransaction.flagForCommit();
+        taskChecklistItemService.update(owner.getId(), task.id(), itemB.id(), null, true);
+        TestTransaction.end();
+        TestTransaction.start();
+
+        List<NotificationResponse> notifications = notificationService
+                .list(assignee.getId(), PageRequest.of(0, 20)).getContent();
+        assertThat(notifications).hasSize(1);
+        assertThat(notifications.get(0).message()).contains("체크리스트 완료 알림 태스크");
+    }
+
+    @Test
+    void completingNonLastItemDoesNotNotify() {
+        User owner = newUser("partial-owner");
+        User assignee = newUser("partial-assignee");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "체크리스트 부분완료 워크스페이스");
+        joinAsMember(workspace.id(), assignee);
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("체크리스트 부분완료 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5),
+                        List.of(assignee.getId())));
+        TaskChecklistItemResponse itemA = taskChecklistItemService.create(owner.getId(), task.id(), "항목 A");
+        taskChecklistItemService.create(owner.getId(), task.id(), "항목 B");
+
+        TestTransaction.flagForCommit();
+        taskChecklistItemService.update(owner.getId(), task.id(), itemA.id(), null, true);
+        TestTransaction.end();
+        TestTransaction.start();
+
+        assertThat(notificationService.list(assignee.getId(), PageRequest.of(0, 20)).getContent()).isEmpty();
     }
 }

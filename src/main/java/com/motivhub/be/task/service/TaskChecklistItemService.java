@@ -3,10 +3,12 @@ package com.motivhub.be.task.service;
 import com.motivhub.be.task.domain.Task;
 import com.motivhub.be.task.domain.TaskChecklistItem;
 import com.motivhub.be.task.dto.TaskChecklistItemResponse;
+import com.motivhub.be.task.event.ChecklistCompletedEvent;
 import com.motivhub.be.task.exception.TaskChecklistItemNotFoundException;
 import com.motivhub.be.task.repository.TaskChecklistItemRepository;
 import com.motivhub.be.workspace.service.WorkspaceService;
 import java.util.List;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,13 +20,16 @@ public class TaskChecklistItemService {
     private final TaskService taskService;
     private final WorkspaceService workspaceService;
     private final TaskAccessPolicy taskAccessPolicy;
+    private final ApplicationEventPublisher eventPublisher;
 
     public TaskChecklistItemService(TaskChecklistItemRepository taskChecklistItemRepository, TaskService taskService,
-                                     WorkspaceService workspaceService, TaskAccessPolicy taskAccessPolicy) {
+                                     WorkspaceService workspaceService, TaskAccessPolicy taskAccessPolicy,
+                                     ApplicationEventPublisher eventPublisher) {
         this.taskChecklistItemRepository = taskChecklistItemRepository;
         this.taskService = taskService;
         this.workspaceService = workspaceService;
         this.taskAccessPolicy = taskAccessPolicy;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
@@ -55,6 +60,9 @@ public class TaskChecklistItemService {
         if (isDone != null) {
             item.markDone(isDone);
         }
+        if (Boolean.TRUE.equals(isDone) && isAllDone(taskId)) {
+            eventPublisher.publishEvent(new ChecklistCompletedEvent(taskId));
+        }
         return TaskChecklistItemResponse.from(item);
     }
 
@@ -69,5 +77,11 @@ public class TaskChecklistItemService {
         return taskChecklistItemRepository.findById(itemId)
                 .filter(item -> item.getTask().getId().equals(taskId))
                 .orElseThrow(() -> new TaskChecklistItemNotFoundException("체크리스트 항목을 찾을 수 없습니다."));
+    }
+
+    private boolean isAllDone(Long taskId) {
+        long total = taskChecklistItemRepository.countByTaskId(taskId);
+        long remaining = taskChecklistItemRepository.countByTaskIdAndDoneFalse(taskId);
+        return total > 0 && remaining == 0;
     }
 }

@@ -15,4 +15,8 @@ public interface TaskChecklistItemRepository extends JpaRepository<TaskChecklist
     int findMaxOrderIndexByTaskId(@Param("taskId") Long taskId);
 
     void deleteByTaskId(Long taskId);
+
+    long countByTaskId(Long taskId);
+
+    long countByTaskIdAndDoneFalse(Long taskId);
 }
