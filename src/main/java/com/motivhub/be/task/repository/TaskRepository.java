@@ -14,4 +14,6 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
     List<Task> findByWorkspaceId(@Param("workspaceId") Long workspaceId);
 
     List<Task> findByStatusInAndDueDateBefore(List<TaskStatus> statuses, LocalDate date);
+
+    List<Task> findByStatusInAndDueDate(List<TaskStatus> statuses, LocalDate dueDate);
 }
