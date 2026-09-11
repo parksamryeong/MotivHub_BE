@@ -16,6 +16,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.test.context.transaction.TestTransaction;
 
 class NotificationServiceTest extends AbstractIntegrationTest {
 
@@ -23,8 +24,12 @@ class NotificationServiceTest extends AbstractIntegrationTest {
     @Autowired private UserRepository userRepository;
 
     private User newUser(String suffix) {
-        return userRepository.save(User.create(
+        User user = userRepository.save(User.create(
                 SocialProvider.GITHUB, "notif-test-" + suffix, suffix + "@test.com", "user_" + suffix, null));
+        TestTransaction.flagForCommit();
+        TestTransaction.end();
+        TestTransaction.start();
+        return user;
     }
 
     @Test
@@ -115,6 +120,9 @@ class NotificationServiceTest extends AbstractIntegrationTest {
 
         notificationService.notify(recipient.getId(), NotificationType.DUE_DATE_APPROACHING,
                 NotificationTargetType.TASK, 42L, "마감일 임박");
+        TestTransaction.flagForCommit();
+        TestTransaction.end();
+        TestTransaction.start();
 
         assertThat(notificationService.alreadyNotifiedToday(
                 recipient.getId(), NotificationType.DUE_DATE_APPROACHING, 42L)).isTrue();

@@ -13,6 +13,7 @@ import java.time.LocalDate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -27,7 +28,7 @@ public class NotificationService {
         this.userRepository = userRepository;
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void notify(Long recipientId, NotificationType type, NotificationTargetType targetType,
                         Long targetId, String message) {
         User recipient = userRepository.findById(recipientId)
@@ -35,6 +36,7 @@ public class NotificationService {
         notificationRepository.save(Notification.create(recipient, type, targetType, targetId, message));
     }
 
+    @Transactional(readOnly = true, propagation = Propagation.REQUIRES_NEW)
     public boolean alreadyNotifiedToday(Long recipientId, NotificationType type, Long targetId) {
         return notificationRepository.existsByRecipientIdAndTypeAndTargetIdAndCreatedAtGreaterThanEqual(
                 recipientId, type, targetId, LocalDate.now().atStartOfDay());
