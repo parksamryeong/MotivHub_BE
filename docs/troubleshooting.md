@@ -172,3 +172,38 @@
 - **결과**: "테스트 DB가 항상 비어서 시작하면, 마이그레이션의 백필 로직 자체는 테스트로 검증이 안 된다"는 걸 남긴 사례 — 이런 종류의 버그는 리뷰(특히 "이 값이 프로덕션의 기존 데이터에 어떻게 적용될까"를 의식적으로 묻는 리뷰)로만 잡을 수 있다.
 
 ---
+
+## [2026-09-11] `@TransactionalEventListener(AFTER_COMMIT)`에서 알림 저장이 조용히 씹히던 문제
+
+- **상황**: 알림 기능(태스크 이벤트 4종 → 인앱 알림) 구현 중, 담당자 지정/댓글/체크리스트완료/마감일임박
+  이벤트를 실제로 발행시켜서 리스너가 `Notification`을 만드는지 확인하는 통합 테스트를 처음 돌렸는데,
+  5개 중 4개가 "알림이 하나도 안 생김"으로 실패했다. 리스너 코드 자체는 브리프 그대로였고 로직에 눈에 띄는
+  버그도 없어 보였다.
+- **원인**: `NotificationService.notify(...)`가 (다른 서비스 메서드들과 똑같이) 기본 `@Transactional`
+  (`Propagation.REQUIRED`)이었는데, 이게 `@TransactionalEventListener(phase = AFTER_COMMIT)` 안에서
+  호출되는 게 문제였다. Spring의 `AbstractPlatformTransactionManager.processCommit()`은 `AFTER_COMMIT`
+  콜백(`triggerAfterCommit()`)을 실제 트랜잭션 리소스 정리(`cleanupAfterCompletion()`)보다 **먼저** 실행한다
+  — 그래서 콜백이 도는 시점엔 "방금 커밋된, 곧 정리될" 트랜잭션 동기화가 아직 활성 상태로 보인다. `REQUIRED`는
+  이걸 "이미 트랜잭션이 있네"로 착각하고 새 트랜잭션을 안 열고 거기 합류해버리는데, 그 죽어가는 트랜잭션은
+  다시 커밋될 일이 없어서 쓰기 자체가 어디에도 반영 안 되고 조용히 사라진다(에러도 안 남, ID도 null로 남음).
+- **해결**: `notify()`의 전파 속성을 `Propagation.REQUIRES_NEW`로 바꿔서, `AFTER_COMMIT` 콜백 안에서 호출돼도
+  항상 진짜 새 트랜잭션을 열고 그 자리에서 커밋하게 했다. 이 변경이 또 다른 두 가지 문제를 연쇄로 드러냈다:
+  1. 기존 `NotificationServiceTest`(Task 1)가 전부 깨짐 — 테스트가 `AbstractIntegrationTest`의 클래스 레벨
+     트랜잭션 안에서 유저를 만드는데, 그건 실제로 커밋된 적이 없어서 `REQUIRES_NEW`가 여는 별개 커넥션에서는
+     그 유저가 안 보임(`UserNotFoundException`). → 테스트 헬퍼(`newUser`)에서
+     `TestTransaction.flagForCommit()/end()/start()`로 실제 커밋시키는 걸로 해결.
+  2. 딱 하나의 테스트(`alreadyNotifiedTodayIsFalseThenTrueAfterFirstNotify`)만 추가로 깨짐 — 쓰기 **전에**
+     한 번 읽고 쓰기 **후에** 또 읽는 패턴이었는데, MySQL 기본 `REPEATABLE_READ`가 트랜잭션의 첫 읽기 시점에
+     읽기 스냅샷을 고정해버려서, 그 뒤에 `REQUIRES_NEW`로 커밋된 내용을 같은 트랜잭션의 두 번째 읽기가 못 봄.
+     → 쓰기와 두 번째 읽기 사이에 같은 `TestTransaction` 갱신을 한 번 더 넣어서 스냅샷을 새로 잡게 해서 해결.
+  최종 리뷰(가장 강력한 모델)에서 세 가지 진단을 전부 독립적으로 재현(격리된 복사본에서 각 수정을 하나씩
+  되돌려보는 A/B 실험)해서 "테스트만 우연히 통과한 게 아님"까지 확인했다. 리뷰에서 추가로 지적된 것 —
+  수신자별 `notify()` 호출에 예외 처리가 없어서 한 명이라도 실패하면(예: 탈퇴한 유저) 나머지 수신자도 못
+  받고, 예외가 커밋 이후까지 새어나가 "성공적으로 처리된 요청"이 사용자한텐 500으로 보일 수 있었던 것 —
+  도 `notifySafely()` try/catch 래퍼로 같이 고쳤다.
+- **결과**: `@TransactionalEventListener(AFTER_COMMIT)` 안에서 쓰기를 하려면 `REQUIRES_NEW`가 사실상
+  필수라는 걸 실측으로 확인한 사례. 동시에 "`REQUIRES_NEW`로 고치면 같은 트랜잭션 안에서 테스트하던
+  기존 테스트들이 깨질 수 있다"는 부작용도 남겼다 — 프로덕션 코드의 트랜잭션 경계를 바꾸는 수정은 그
+  코드를 호출하는 테스트의 트랜잭션 가정도 같이 깨질 수 있다는 걸 다시 확인.
+
+---

@@ -13,6 +13,7 @@ import com.motivhub.be.task.repository.TaskChecklistItemRepository;
 import com.motivhub.be.task.repository.TaskCommentRepository;
 import com.motivhub.be.task.repository.TaskRepository;
 import com.motivhub.be.task.domain.TaskAssignee;
+import com.motivhub.be.task.event.AssigneeAddedEvent;
 import com.motivhub.be.task.exception.InvalidTaskStatusTransitionException;
 import com.motivhub.be.user.domain.User;
 import com.motivhub.be.user.dto.UserSummary;
@@ -28,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -44,12 +46,14 @@ public class TaskService {
     private final WorkspaceService workspaceService;
     private final TaskActivityLogService taskActivityLogService;
     private final TaskAccessPolicy taskAccessPolicy;
+    private final ApplicationEventPublisher eventPublisher;
 
     public TaskService(TaskRepository taskRepository, TaskAssigneeRepository taskAssigneeRepository,
                         TaskChecklistItemRepository taskChecklistItemRepository,
                         TaskCommentRepository taskCommentRepository, TaskActivityLogRepository taskActivityLogRepository,
                         UserRepository userRepository, WorkspaceService workspaceService,
-                        TaskActivityLogService taskActivityLogService, TaskAccessPolicy taskAccessPolicy) {
+                        TaskActivityLogService taskActivityLogService, TaskAccessPolicy taskAccessPolicy,
+                        ApplicationEventPublisher eventPublisher) {
         this.taskRepository = taskRepository;
         this.taskAssigneeRepository = taskAssigneeRepository;
         this.taskChecklistItemRepository = taskChecklistItemRepository;
@@ -59,6 +63,7 @@ public class TaskService {
         this.workspaceService = workspaceService;
         this.taskActivityLogService = taskActivityLogService;
         this.taskAccessPolicy = taskAccessPolicy;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
@@ -200,6 +205,7 @@ public class TaskService {
             User actor = userRepository.findById(userId)
                     .orElseThrow(() -> new UserNotFoundException("유저를 찾을 수 없습니다."));
             taskActivityLogService.record(task, actor, TaskActivityAction.ADD_ASSIGNEE, "assignee", null, target.getNickname());
+            eventPublisher.publishEvent(new AssigneeAddedEvent(taskId, targetUserId));
         }
         return TaskResponse.of(task, getAssigneeSummaries(taskId));
     }

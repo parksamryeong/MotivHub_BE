@@ -19,6 +19,8 @@ import com.motivhub.be.task.repository.TaskActivityLogRepository;
 import com.motivhub.be.task.repository.TaskAssigneeRepository;
 import com.motivhub.be.task.repository.TaskChecklistItemRepository;
 import com.motivhub.be.task.repository.TaskCommentRepository;
+import com.motivhub.be.notification.dto.NotificationResponse;
+import com.motivhub.be.notification.service.NotificationService;
 import com.motivhub.be.user.domain.SocialProvider;
 import com.motivhub.be.user.domain.User;
 import com.motivhub.be.user.dto.UserSummary;
@@ -34,6 +36,8 @@ import java.time.LocalDate;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.test.context.transaction.TestTransaction;
 
 class TaskServiceTest extends AbstractIntegrationTest {
 
@@ -47,6 +51,7 @@ class TaskServiceTest extends AbstractIntegrationTest {
     @Autowired private TaskCommentRepository taskCommentRepository;
     @Autowired private TaskActivityLogRepository taskActivityLogRepository;
     @Autowired private TaskExpirationScheduler taskExpirationScheduler;
+    @Autowired private NotificationService notificationService;
 
     private User newUser(String suffix) {
         return userRepository.save(User.create(
@@ -491,5 +496,45 @@ class TaskServiceTest extends AbstractIntegrationTest {
         taskService.delete(owner.getId(), task.id());
 
         assertThat(taskChecklistItemRepository.findByTaskIdOrderByOrderIndexAsc(task.id())).isEmpty();
+    }
+
+    @Test
+    void addingAssigneeNotifiesOnlyTheNewAssignee() {
+        User owner = newUser("assignee-notify-owner");
+        User assignee = newUser("assignee-notify-target");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "담당자 알림 워크스페이스");
+        workspaceMemberRepository.save(WorkspaceMember.create(
+                workspaceService.getWorkspace(workspace.id()), assignee, WorkspaceRole.MEMBER));
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("담당자 알림 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        TestTransaction.flagForCommit();
+        taskService.addAssignee(owner.getId(), task.id(), assignee.getId());
+        TestTransaction.end();
+        TestTransaction.start();
+
+        List<NotificationResponse> notifications = notificationService
+                .list(assignee.getId(), PageRequest.of(0, 20)).getContent();
+        assertThat(notifications).hasSize(1);
+        assertThat(notifications.get(0).message()).contains("담당자 알림 태스크");
+    }
+
+    @Test
+    void reAddingSameAssigneeDoesNotDuplicateNotification() {
+        User owner = newUser("assignee-dup-owner");
+        User assignee = newUser("assignee-dup-target");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "담당자 중복 알림 워크스페이스");
+        workspaceMemberRepository.save(WorkspaceMember.create(
+                workspaceService.getWorkspace(workspace.id()), assignee, WorkspaceRole.MEMBER));
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("담당자 중복 알림 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        TestTransaction.flagForCommit();
+        taskService.addAssignee(owner.getId(), task.id(), assignee.getId());
+        taskService.addAssignee(owner.getId(), task.id(), assignee.getId());
+        TestTransaction.end();
+        TestTransaction.start();
+
+        assertThat(notificationService.list(assignee.getId(), PageRequest.of(0, 20)).getContent()).hasSize(1);
     }
 }
