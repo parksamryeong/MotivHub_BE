@@ -7,14 +7,21 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.motivhub.be.auth.jwt.JwtProvider;
 import com.motivhub.be.realtime.dto.TaskBoardChangeMessage;
 import com.motivhub.be.support.AbstractIntegrationTest;
+import com.motivhub.be.task.domain.TaskStatus;
 import com.motivhub.be.task.dto.TaskCreateRequest;
 import com.motivhub.be.task.dto.TaskResponse;
 import com.motivhub.be.task.event.TaskChangeType;
+import com.motivhub.be.task.service.TaskExpirationScheduler;
 import com.motivhub.be.task.service.TaskService;
 import com.motivhub.be.user.domain.SocialProvider;
 import com.motivhub.be.user.domain.User;
+import com.motivhub.be.user.dto.UserSummary;
 import com.motivhub.be.user.repository.UserRepository;
+import com.motivhub.be.workspace.domain.Workspace;
+import com.motivhub.be.workspace.domain.WorkspaceMember;
+import com.motivhub.be.workspace.domain.WorkspaceRole;
 import com.motivhub.be.workspace.dto.WorkspaceResponse;
+import com.motivhub.be.workspace.repository.WorkspaceMemberRepository;
 import com.motivhub.be.workspace.service.WorkspaceService;
 import java.lang.reflect.Type;
 import java.time.LocalDate;
@@ -48,7 +55,9 @@ class TaskBoardBroadcasterTest extends AbstractIntegrationTest {
     @Autowired private TaskService taskService;
     @Autowired private WorkspaceService workspaceService;
     @Autowired private UserRepository userRepository;
+    @Autowired private WorkspaceMemberRepository workspaceMemberRepository;
     @Autowired private JwtProvider jwtProvider;
+    @Autowired private TaskExpirationScheduler taskExpirationScheduler;
 
     private User newUser(String suffix) {
         User user = userRepository.save(User.create(
@@ -57,6 +66,11 @@ class TaskBoardBroadcasterTest extends AbstractIntegrationTest {
         TestTransaction.end();
         TestTransaction.start();
         return user;
+    }
+
+    private void joinAsMember(Long workspaceId, User user) {
+        Workspace workspace = workspaceService.getWorkspace(workspaceId);
+        workspaceMemberRepository.save(WorkspaceMember.create(workspace, user, WorkspaceRole.MEMBER));
     }
 
     // TaskBoardChangeMessage는 LocalDate/LocalDateTime을 담은 TaskResponse를 포함하므로, 클라이언트
@@ -150,6 +164,66 @@ class TaskBoardBroadcasterTest extends AbstractIntegrationTest {
         assertThat(received.taskId()).isEqualTo(task.id());
         assertThat(received.task()).isNotNull();
         assertThat(received.task().name()).isEqualTo("바뀐 보드 태스크 이름");
+
+        session.disconnect();
+    }
+
+    @Test
+    void boardBroadcastIncludesAssigneesWhenTaskIsUpdated() throws Exception {
+        User owner = newUser("board-assignee-owner");
+        User teammate = newUser("board-assignee-teammate");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "보드 브로드캐스트 담당자 워크스페이스");
+        joinAsMember(workspace.id(), teammate);
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("보드 브로드캐스트 담당자 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of(owner.getId())));
+        TestTransaction.flagForCommit();
+        TestTransaction.end();
+        TestTransaction.start();
+
+        StompSession session = connectAsUser(owner);
+        BlockingQueue<TaskBoardChangeMessage> messages = subscribeToBoard(session, workspace.id());
+        Thread.sleep(500); // 구독 프레임이 서버에 실제로 등록될 시간 확보(구독은 비동기)
+
+        TestTransaction.flagForCommit();
+        taskService.addAssignee(owner.getId(), task.id(), teammate.getId());
+        TestTransaction.end();
+        TestTransaction.start();
+
+        TaskBoardChangeMessage received = messages.poll(5, TimeUnit.SECONDS);
+        assertThat(received).isNotNull();
+        assertThat(received.changeType()).isEqualTo(TaskChangeType.UPDATED);
+        assertThat(received.taskId()).isEqualTo(task.id());
+        assertThat(received.task()).isNotNull();
+        assertThat(received.task().assignees()).extracting(UserSummary::id).containsExactlyInAnyOrder(owner.getId(), teammate.getId());
+
+        session.disconnect();
+    }
+
+    @Test
+    void memberReceivesBroadcastWhenSchedulerExpiresOverdueTask() throws Exception {
+        User owner = newUser("expire-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "보드 브로드캐스트 만료 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("보드 브로드캐스트 만료 태스크", null, LocalDate.now().minusDays(5), LocalDate.now().minusDays(1), List.of()));
+        TestTransaction.flagForCommit();
+        TestTransaction.end();
+        TestTransaction.start();
+
+        StompSession session = connectAsUser(owner);
+        BlockingQueue<TaskBoardChangeMessage> messages = subscribeToBoard(session, workspace.id());
+        Thread.sleep(500);
+
+        TestTransaction.flagForCommit();
+        taskExpirationScheduler.expireOverdueTasks();
+        TestTransaction.end();
+        TestTransaction.start();
+
+        TaskBoardChangeMessage received = messages.poll(5, TimeUnit.SECONDS);
+        assertThat(received).isNotNull();
+        assertThat(received.changeType()).isEqualTo(TaskChangeType.UPDATED);
+        assertThat(received.taskId()).isEqualTo(task.id());
+        assertThat(received.task()).isNotNull();
+        assertThat(received.task().status()).isEqualTo(TaskStatus.EXPIRED);
 
         session.disconnect();
     }
