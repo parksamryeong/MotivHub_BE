@@ -23,6 +23,7 @@ public class TaskTopicChannelInterceptor implements ChannelInterceptor {
     private static final String BEARER_PREFIX = "Bearer ";
     private static final String TOKEN_TYPE_ACCESS = "access";
     private static final Pattern TASK_TOPIC_PATTERN = Pattern.compile("^/topic/tasks/(\\d+)(?:/presence)?$");
+    private static final Pattern WORKSPACE_BOARD_TOPIC_PATTERN = Pattern.compile("^/topic/workspaces/(\\d+)/tasks$");
 
     private final JwtProvider jwtProvider;
     private final WorkspaceService workspaceService;
@@ -66,8 +67,7 @@ public class TaskTopicChannelInterceptor implements ChannelInterceptor {
 
     private void handleSubscribe(StompHeaderAccessor accessor) {
         String destination = accessor.getDestination();
-        Matcher matcher = destination == null ? null : TASK_TOPIC_PATTERN.matcher(destination);
-        if (matcher == null || !matcher.matches()) {
+        if (destination == null) {
             throw new StompAuthenticationException("구독할 수 없는 목적지입니다.");
         }
         Principal principal = accessor.getUser();
@@ -75,8 +75,20 @@ public class TaskTopicChannelInterceptor implements ChannelInterceptor {
             throw new StompAuthenticationException("인증되지 않았습니다.");
         }
         Long userId = Long.valueOf(principal.getName());
-        Long taskId = Long.valueOf(matcher.group(1));
-        Task task = taskService.getTask(taskId);
-        workspaceService.getMembership(task.getWorkspace().getId(), userId);
+
+        Matcher taskMatcher = TASK_TOPIC_PATTERN.matcher(destination);
+        if (taskMatcher.matches()) {
+            Long taskId = Long.valueOf(taskMatcher.group(1));
+            Task task = taskService.getTask(taskId);
+            workspaceService.getMembership(task.getWorkspace().getId(), userId);
+            return;
+        }
+        Matcher workspaceMatcher = WORKSPACE_BOARD_TOPIC_PATTERN.matcher(destination);
+        if (workspaceMatcher.matches()) {
+            Long workspaceId = Long.valueOf(workspaceMatcher.group(1));
+            workspaceService.getMembership(workspaceId, userId);
+            return;
+        }
+        throw new StompAuthenticationException("구독할 수 없는 목적지입니다.");
     }
 }

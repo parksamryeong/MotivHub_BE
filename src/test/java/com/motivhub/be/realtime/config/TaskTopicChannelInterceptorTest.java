@@ -217,4 +217,37 @@ class TaskTopicChannelInterceptorTest extends AbstractIntegrationTest {
         assertThatThrownBy(() -> interceptor.preSend(message, null))
                 .isInstanceOf(NotWorkspaceMemberException.class);
     }
+
+    @Test
+    void memberCanSubscribeToWorkspaceBoardTopic() {
+        User owner = newUser("board-sub-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "보드 구독 테스트 워크스페이스");
+
+        Message<byte[]> message = subscribeMessage("/topic/workspaces/" + workspace.id() + "/tasks", owner.getId());
+
+        assertThatCode(() -> interceptor.preSend(message, null)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void nonMemberCannotSubscribeToWorkspaceBoardTopic() {
+        User owner = newUser("board-sub-owner2");
+        User outsider = newUser("board-sub-outsider");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "보드 구독 권한 워크스페이스");
+
+        Message<byte[]> message = subscribeMessage("/topic/workspaces/" + workspace.id() + "/tasks", outsider.getId());
+
+        assertThatThrownBy(() -> interceptor.preSend(message, null))
+                .isInstanceOf(NotWorkspaceMemberException.class);
+    }
+
+    @Test
+    void subscribeToWorkspaceBoardWildcardThrowsEvenForLegitimateMember() {
+        User owner = newUser("board-sub-wildcard-owner");
+        workspaceService.create(owner.getId(), "보드 와일드카드 구독 워크스페이스");
+
+        Message<byte[]> message = subscribeMessage("/topic/workspaces/*/tasks", owner.getId());
+
+        assertThatThrownBy(() -> interceptor.preSend(message, null))
+                .isInstanceOf(StompAuthenticationException.class);
+    }
 }
