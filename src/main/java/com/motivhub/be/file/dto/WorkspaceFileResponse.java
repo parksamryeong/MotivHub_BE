@@ -6,11 +6,12 @@ import java.time.LocalDateTime;
 
 public record WorkspaceFileResponse(
         Long id, String fileName, long fileSize, String contentType, String category, UserSummary uploadedBy,
-        LocalDateTime createdAt) {
+        LocalDateTime createdAt, Long taskId) {
 
     public static WorkspaceFileResponse from(WorkspaceFile file) {
         return new WorkspaceFileResponse(
                 file.getId(), file.getFileName(), file.getFileSize(), file.getContentType(), file.getCategory(),
-                UserSummary.from(file.getUploadedBy()), file.getCreatedAt());
+                UserSummary.from(file.getUploadedBy()), file.getCreatedAt(),
+                file.getTask() == null ? null : file.getTask().getId());
     }
 }

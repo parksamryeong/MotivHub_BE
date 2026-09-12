@@ -10,6 +10,9 @@ import com.motivhub.be.file.exception.FileUploadNotConfirmedException;
 import com.motivhub.be.file.exception.WorkspaceFileForbiddenException;
 import com.motivhub.be.file.exception.WorkspaceFileNotFoundException;
 import com.motivhub.be.file.repository.WorkspaceFileRepository;
+import com.motivhub.be.task.domain.Task;
+import com.motivhub.be.task.exception.TaskNotFoundException;
+import com.motivhub.be.task.service.TaskService;
 import com.motivhub.be.user.domain.User;
 import com.motivhub.be.user.exception.UserNotFoundException;
 import com.motivhub.be.user.repository.UserRepository;
@@ -46,6 +49,7 @@ public class WorkspaceFileService {
             ".exe", ".bat", ".cmd", ".sh", ".msi", ".dll", ".scr", ".com", ".jar");
 
     private final WorkspaceService workspaceService;
+    private final TaskService taskService;
     private final WorkspaceFileRepository workspaceFileRepository;
     private final UserRepository userRepository;
     private final S3Client s3Client;
@@ -54,9 +58,11 @@ public class WorkspaceFileService {
     @Value("${aws.s3.bucket}")
     private String bucket;
 
-    public WorkspaceFileService(WorkspaceService workspaceService, WorkspaceFileRepository workspaceFileRepository,
+    public WorkspaceFileService(WorkspaceService workspaceService, TaskService taskService,
+                                 WorkspaceFileRepository workspaceFileRepository,
                                  UserRepository userRepository, S3Client s3Client, S3Presigner s3Presigner) {
         this.workspaceService = workspaceService;
+        this.taskService = taskService;
         this.workspaceFileRepository = workspaceFileRepository;
         this.userRepository = userRepository;
         this.s3Client = s3Client;
@@ -92,8 +98,15 @@ public class WorkspaceFileService {
 
     @Transactional
     public WorkspaceFileResponse confirm(Long userId, Long workspaceId, String fileKey, String fileName,
-                                          long fileSize, String contentType, String category) {
+                                          long fileSize, String contentType, String category, Long taskId) {
         Workspace workspace = workspaceService.getMembership(workspaceId, userId).getWorkspace();
+        Task task = null;
+        if (taskId != null) {
+            task = taskService.getTask(taskId);
+            if (!task.getWorkspace().getId().equals(workspaceId)) {
+                throw new TaskNotFoundException("태스크를 찾을 수 없습니다.");
+            }
+        }
         String expectedPrefix = "workspaces/" + workspaceId + "/files/";
         if (!fileKey.startsWith(expectedPrefix)) {
             throw new FileUploadNotConfirmedException("이 워크스페이스에 속하지 않는 파일입니다.");
@@ -116,13 +129,21 @@ public class WorkspaceFileService {
         User uploadedBy = userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException("유저를 찾을 수 없습니다."));
         WorkspaceFile file = workspaceFileRepository.save(WorkspaceFile.create(
-                workspace, fileKey, fileName, actualFileSize, actualContentType, category, uploadedBy));
+                workspace, task, fileKey, fileName, actualFileSize, actualContentType, category, uploadedBy));
         return WorkspaceFileResponse.from(file);
     }
 
     public List<WorkspaceFileResponse> list(Long userId, Long workspaceId) {
         workspaceService.getMembership(workspaceId, userId);
-        return workspaceFileRepository.findByWorkspaceIdOrderByCreatedAtDesc(workspaceId).stream()
+        return workspaceFileRepository.findByWorkspaceIdAndTaskIsNullOrderByCreatedAtDesc(workspaceId).stream()
+                .map(WorkspaceFileResponse::from)
+                .toList();
+    }
+
+    public List<WorkspaceFileResponse> listByTask(Long userId, Long taskId) {
+        Task task = taskService.getTask(taskId);
+        workspaceService.getMembership(task.getWorkspace().getId(), userId);
+        return workspaceFileRepository.findByTaskIdOrderByCreatedAtDesc(taskId).stream()
                 .map(WorkspaceFileResponse::from)
                 .toList();
     }

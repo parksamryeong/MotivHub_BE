@@ -1,5 +1,6 @@
 package com.motivhub.be.task.service;
 
+import com.motivhub.be.file.repository.WorkspaceFileRepository;
 import com.motivhub.be.task.domain.Task;
 import com.motivhub.be.task.domain.TaskActivityAction;
 import com.motivhub.be.task.dto.TaskCreateRequest;
@@ -46,6 +47,7 @@ public class TaskService {
     private final TaskCommentRepository taskCommentRepository;
     private final TaskActivityLogRepository taskActivityLogRepository;
     private final TaskNoteRepository taskNoteRepository;
+    private final WorkspaceFileRepository workspaceFileRepository;
     private final UserRepository userRepository;
     private final WorkspaceService workspaceService;
     private final TaskActivityLogService taskActivityLogService;
@@ -55,7 +57,7 @@ public class TaskService {
     public TaskService(TaskRepository taskRepository, TaskAssigneeRepository taskAssigneeRepository,
                         TaskChecklistItemRepository taskChecklistItemRepository,
                         TaskCommentRepository taskCommentRepository, TaskActivityLogRepository taskActivityLogRepository,
-                        TaskNoteRepository taskNoteRepository,
+                        TaskNoteRepository taskNoteRepository, WorkspaceFileRepository workspaceFileRepository,
                         UserRepository userRepository, WorkspaceService workspaceService,
                         TaskActivityLogService taskActivityLogService, TaskAccessPolicy taskAccessPolicy,
                         ApplicationEventPublisher eventPublisher) {
@@ -65,6 +67,7 @@ public class TaskService {
         this.taskCommentRepository = taskCommentRepository;
         this.taskActivityLogRepository = taskActivityLogRepository;
         this.taskNoteRepository = taskNoteRepository;
+        this.workspaceFileRepository = workspaceFileRepository;
         this.userRepository = userRepository;
         this.workspaceService = workspaceService;
         this.taskActivityLogService = taskActivityLogService;
@@ -187,6 +190,7 @@ public class TaskService {
         taskActivityLogRepository.deleteByTaskId(taskId);
         taskChecklistItemRepository.deleteByTaskId(taskId);
         taskNoteRepository.deleteByTaskId(taskId);
+        workspaceFileRepository.clearTaskId(taskId);
         taskRepository.delete(task);
         eventPublisher.publishEvent(new TaskChangedEvent(taskId, task.getWorkspace().getId(), TaskChangeType.DELETED));
     }

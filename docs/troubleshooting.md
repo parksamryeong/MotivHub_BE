@@ -357,3 +357,39 @@
   버전업이나 비슷한 패턴을 다른 곳에 재사용할 때 똑같이 안전하다는 보장이 없다.
 
 ---
+
+## [2026-09-13] `@Modifying(clearAutomatically = true)`만 켜면 직전 `deleteByTaskId`들이 조용히 유실됨
+
+- **상황**: 태스크 전용 파일 첨부 기능(`WorkspaceFile`에 nullable `task_id` 추가) 구현 중, "태스크
+  삭제 시 첨부 파일은 지우지 말고 일반 파일함으로 되돌린다"는 요구사항을 처음엔 마이그레이션의
+  `ON DELETE SET NULL`만으로 해결하려 했다. 그런데 테스트에서 태스크 삭제 직전에 그 파일을 이미
+  로딩(`confirm()`)해둔 상태라 Hibernate가 `TransientPropertyValueException`을 던졌다 — DB 레벨
+  캐스케이드는 ORM이 전혀 모르기 때문에, 같은 영속성 컨텍스트에 이미 로딩된 엔티티가 삭제될 대상을
+  참조하고 있으면 플러시 시점에 일관성 체크가 걸린다.
+- **1차 시도와 그 부작용**: `TaskService.delete()`에서 명시적으로
+  `WorkspaceFileRepository.clearTaskId(taskId)`(벌크 `UPDATE ... SET task = null`)를 호출하도록
+  고치면서 `@Modifying(clearAutomatically = true)`만 켰다. 개별 테스트(`WorkspaceFileServiceTest`)는
+  통과했는데, `TaskServiceTest`를 같이 돌리자 기존에 잘 통과하던 `deletingTaskAlsoDeletesActivityLogs`,
+  `deletingTaskWithAssigneeAndCommentDoesNotThrow`, `deletingTaskAlsoDeletesChecklistItems` 3개가
+  갑자기 실패했다 — 태스크 삭제 후에도 댓글/체크리스트/활동로그가 그대로 남아있다는 assertion 실패.
+- **원인**: `TaskService.delete()`는 내 새 코드보다 먼저 `taskAssigneeRepository.deleteByTaskId`,
+  `taskCommentRepository.deleteByTaskId`, `taskActivityLogRepository.deleteByTaskId`,
+  `taskChecklistItemRepository.deleteByTaskId`를 호출한다. 이 파생(derived) delete 메서드들은 즉시
+  DB에 반영되는 게 아니라, Hibernate가 실제 DELETE문을 **플러시 시점까지 미룬 채 영속성 컨텍스트에만
+  예약**해둔다. 그런데 `@Modifying`의 `clearAutomatically = true`는 쿼리 실행 "후" 컨텍스트를 비우기만
+  할 뿐, "전"에 먼저 플러시하지는 않는다(`flushAutomatically`가 별도 옵션, 기본값 `false`). 그래서 내
+  벌크 UPDATE가 실행된 뒤 `clear()`가 호출되는 순간, 아직 플러시 안 된 채 대기 중이던 앞의 4개
+  `deleteByTaskId` 예약이 DB에 한 번도 반영되지 못하고 그대로 증발했다 — 태스크는 지워지는데 딸린
+  하위 데이터는 조용히 살아남는 버그.
+- **해결**: `@Modifying(flushAutomatically = true, clearAutomatically = true)`로 둘 다 켰다.
+  `flushAutomatically`가 먼저 대기 중인 변경사항을 DB에 반영한 뒤에 내 벌크 UPDATE를 실행하고, 그 다음
+  `clearAutomatically`가 컨텍스트를 비워서 이후 조회가 최신 상태(방금 null로 바뀐 `task_id`)를 보게
+  한다.
+- **결과**: `@Modifying` 벌크 쿼리를 기존 엔티티 기반 삭제/수정 로직과 같은 트랜잭션에 섞어 쓸 때는
+  `clearAutomatically`만으로는 부족하고 `flushAutomatically`도 항상 같이 켜야 한다는 게 실측으로 확인된
+  교훈 — 그렇지 않으면 "직전에 예약된 변경이 조용히 사라지는" 종류의 버그가 생기는데, 격리된 단위
+  테스트만으로는 절대 못 잡고(그 테스트는 앞선 `deleteByTaskId` 호출 자체가 없으니까) 전체 스위트를
+  같이 돌려야만 드러난다 — 이 세션에서 반복해서 나온 "개별 리뷰/테스트는 통과해도 조합에서 깨지는" 패턴의
+  또 다른 사례.
+
+---

@@ -42,13 +42,19 @@ public class WorkspaceFileController {
             @Valid @RequestBody WorkspaceFileConfirmRequest request) {
         return ResponseEntity.ok(workspaceFileService.confirm(
                 userId, workspaceId, request.fileKey(), request.fileName(), request.fileSize(),
-                request.contentType(), request.category()));
+                request.contentType(), request.category(), request.taskId()));
     }
 
     @GetMapping("/api/workspaces/{workspaceId}/files")
     public ResponseEntity<List<WorkspaceFileResponse>> list(
             @AuthenticationPrincipal Long userId, @PathVariable Long workspaceId) {
         return ResponseEntity.ok(workspaceFileService.list(userId, workspaceId));
+    }
+
+    @GetMapping("/api/tasks/{taskId}/files")
+    public ResponseEntity<List<WorkspaceFileResponse>> listByTask(
+            @AuthenticationPrincipal Long userId, @PathVariable Long taskId) {
+        return ResponseEntity.ok(workspaceFileService.listByTask(userId, taskId));
     }
 
     @GetMapping("/api/workspaces/{workspaceId}/files/{fileId}/download")

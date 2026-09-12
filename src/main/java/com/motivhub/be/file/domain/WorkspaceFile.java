@@ -1,5 +1,6 @@
 package com.motivhub.be.file.domain;
 
+import com.motivhub.be.task.domain.Task;
 import com.motivhub.be.user.domain.User;
 import com.motivhub.be.workspace.domain.Workspace;
 import jakarta.persistence.Column;
@@ -30,6 +31,10 @@ public class WorkspaceFile {
     @JoinColumn(name = "workspace_id", nullable = false)
     private Workspace workspace;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "task_id")
+    private Task task;
+
     @Column(name = "file_key", nullable = false, unique = true, length = 500)
     private String fileKey;
 
@@ -52,9 +57,10 @@ public class WorkspaceFile {
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
-    private WorkspaceFile(Workspace workspace, String fileKey, String fileName, long fileSize,
+    private WorkspaceFile(Workspace workspace, Task task, String fileKey, String fileName, long fileSize,
                            String contentType, String category, User uploadedBy) {
         this.workspace = workspace;
+        this.task = task;
         this.fileKey = fileKey;
         this.fileName = fileName;
         this.fileSize = fileSize;
@@ -64,9 +70,9 @@ public class WorkspaceFile {
         this.createdAt = LocalDateTime.now();
     }
 
-    public static WorkspaceFile create(Workspace workspace, String fileKey, String fileName, long fileSize,
-                                        String contentType, String category, User uploadedBy) {
-        return new WorkspaceFile(workspace, fileKey, fileName, fileSize, contentType, category, uploadedBy);
+    public static WorkspaceFile create(Workspace workspace, Task task, String fileKey, String fileName,
+                                        long fileSize, String contentType, String category, User uploadedBy) {
+        return new WorkspaceFile(workspace, task, fileKey, fileName, fileSize, contentType, category, uploadedBy);
     }
 
     public boolean isUploadedBy(Long userId) {

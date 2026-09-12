@@ -15,6 +15,9 @@ import com.motivhub.be.file.dto.FilePresignRequest;
 import com.motivhub.be.file.dto.WorkspaceFileCategoryUpdateRequest;
 import com.motivhub.be.file.dto.WorkspaceFileConfirmRequest;
 import com.motivhub.be.support.AbstractIntegrationTest;
+import com.motivhub.be.task.dto.TaskCreateRequest;
+import com.motivhub.be.task.dto.TaskResponse;
+import com.motivhub.be.task.service.TaskService;
 import com.motivhub.be.user.domain.SocialProvider;
 import com.motivhub.be.user.domain.User;
 import com.motivhub.be.user.repository.UserRepository;
@@ -28,6 +31,8 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.LocalDate;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -42,6 +47,7 @@ class WorkspaceFileControllerTest extends AbstractIntegrationTest {
     @Autowired private JwtProvider jwtProvider;
     @Autowired private UserRepository userRepository;
     @Autowired private WorkspaceService workspaceService;
+    @Autowired private TaskService taskService;
     @Autowired private WorkspaceMemberRepository workspaceMemberRepository;
 
     private User newUser(String suffix) {
@@ -101,7 +107,7 @@ class WorkspaceFileControllerTest extends AbstractIntegrationTest {
                         .header("Authorization", "Bearer " + tokenFor(owner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                new WorkspaceFileConfirmRequest(fileKey, "notes.txt", 5L, "text/plain", "문서"))))
+                                new WorkspaceFileConfirmRequest(fileKey, "notes.txt", 5L, "text/plain", "문서", null))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.fileName").value("notes.txt"))
                 .andExpect(jsonPath("$.category").value("문서"));
@@ -113,6 +119,45 @@ class WorkspaceFileControllerTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$[0].fileName").value("notes.txt"))
                 .andExpect(jsonPath("$[0].category").value("문서"))
                 .andExpect(jsonPath("$[0].uploadedBy.nickname").value(owner.getNickname()));
+    }
+
+    @Test
+    void confirmingWithTaskIdMakesFileAppearOnlyInTaskFileList() throws Exception {
+        User owner = newUser("f8-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "태스크 파일 API 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("태스크 파일 API 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+        String presignResponse = mockMvc.perform(post("/api/workspaces/{workspaceId}/files/presign", workspace.id())
+                        .header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new FilePresignRequest("task-note.txt", "text/plain", 5L))))
+                .andReturn().getResponse().getContentAsString();
+        JsonNode presignJson = objectMapper.readTree(presignResponse);
+        String uploadUrl = presignJson.get("uploadUrl").asText();
+        String fileKey = presignJson.get("fileKey").asText();
+        HttpClient client = HttpClient.newHttpClient();
+        client.send(HttpRequest.newBuilder().uri(URI.create(uploadUrl))
+                .PUT(HttpRequest.BodyPublishers.ofString("hello")).build(), HttpResponse.BodyHandlers.discarding());
+
+        mockMvc.perform(post("/api/workspaces/{workspaceId}/files", workspace.id())
+                        .header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new WorkspaceFileConfirmRequest(fileKey, "task-note.txt", 5L, "text/plain", null, task.id()))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.taskId").value(task.id()));
+
+        mockMvc.perform(get("/api/workspaces/{workspaceId}/files", workspace.id())
+                        .header("Authorization", "Bearer " + tokenFor(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+
+        mockMvc.perform(get("/api/tasks/{taskId}/files", task.id())
+                        .header("Authorization", "Bearer " + tokenFor(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].fileName").value("task-note.txt"));
     }
 
     @Test
@@ -137,7 +182,7 @@ class WorkspaceFileControllerTest extends AbstractIntegrationTest {
                         .header("Authorization", "Bearer " + tokenFor(owner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                new WorkspaceFileConfirmRequest(fileKey, "cat.txt", 5L, "text/plain", null))))
+                                new WorkspaceFileConfirmRequest(fileKey, "cat.txt", 5L, "text/plain", null, null))))
                 .andReturn().getResponse().getContentAsString();
         Long fileId = objectMapper.readTree(confirmResponse).get("id").asLong();
 
@@ -182,7 +227,7 @@ class WorkspaceFileControllerTest extends AbstractIntegrationTest {
                         .header("Authorization", "Bearer " + tokenFor(owner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                new WorkspaceFileConfirmRequest(fileKey, "dl.txt", 5L, "text/plain", null))))
+                                new WorkspaceFileConfirmRequest(fileKey, "dl.txt", 5L, "text/plain", null, null))))
                 .andReturn().getResponse().getContentAsString();
         Long fileId = objectMapper.readTree(confirmResponse).get("id").asLong();
 
