@@ -29,6 +29,7 @@ import com.motivhub.be.workspace.exception.NotWorkspaceOwnerException;
 import com.motivhub.be.workspace.exception.WorkspaceLeaveRequiresTransferException;
 import com.motivhub.be.workspace.exception.WorkspaceMemberNotFoundException;
 import com.motivhub.be.workspace.exception.WorkspaceNotFoundException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -45,6 +46,12 @@ public class GlobalExceptionHandler {
                 : "요청 값이 올바르지 않습니다.";
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ErrorResponse.of("INVALID_REQUEST", message));
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleDataIntegrityViolation(DataIntegrityViolationException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of("DATA_CONFLICT", "요청이 다른 변경과 충돌했습니다. 다시 시도해주세요."));
     }
 
     @ExceptionHandler(InvalidCodeException.class)

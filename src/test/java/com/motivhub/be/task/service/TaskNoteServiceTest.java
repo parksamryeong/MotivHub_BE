@@ -8,9 +8,7 @@ import com.motivhub.be.task.dto.TaskCreateRequest;
 import com.motivhub.be.task.dto.TaskNoteResponse;
 import com.motivhub.be.task.dto.TaskResponse;
 import com.motivhub.be.task.repository.TaskNoteRepository;
-import com.motivhub.be.user.domain.SocialProvider;
 import com.motivhub.be.user.domain.User;
-import com.motivhub.be.user.repository.UserRepository;
 import com.motivhub.be.workspace.domain.Workspace;
 import com.motivhub.be.workspace.domain.WorkspaceMember;
 import com.motivhub.be.workspace.domain.WorkspaceRole;
@@ -30,12 +28,6 @@ class TaskNoteServiceTest extends AbstractIntegrationTest {
     @Autowired private TaskNoteRepository taskNoteRepository;
     @Autowired private WorkspaceService workspaceService;
     @Autowired private WorkspaceMemberRepository workspaceMemberRepository;
-    @Autowired private UserRepository userRepository;
-
-    private User newUser(String suffix) {
-        return userRepository.save(User.create(
-                SocialProvider.GITHUB, "note-test-" + suffix, suffix + "@test.com", "user_" + suffix, null));
-    }
 
     private void joinAsMember(Long workspaceId, User user) {
         Workspace workspace = workspaceService.getWorkspace(workspaceId);
@@ -44,7 +36,7 @@ class TaskNoteServiceTest extends AbstractIntegrationTest {
 
     @Test
     void gettingNoteBeforeAnyoneWritesReturnsNullContent() {
-        User owner = newUser("note-get-empty-owner");
+        User owner = createUniqueUser("note-get-empty-owner");
         WorkspaceResponse workspace = workspaceService.create(owner.getId(), "노트 없음 워크스페이스");
         TaskResponse task = taskService.create(owner.getId(), workspace.id(),
                 new TaskCreateRequest("노트 없음 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
@@ -59,8 +51,8 @@ class TaskNoteServiceTest extends AbstractIntegrationTest {
 
     @Test
     void nonAssigneeMemberCanCreateNoteViaUpsert() {
-        User owner = newUser("note-create-owner");
-        User member = newUser("note-create-member");
+        User owner = createUniqueUser("note-create-owner");
+        User member = createUniqueUser("note-create-member");
         WorkspaceResponse workspace = workspaceService.create(owner.getId(), "노트 생성 워크스페이스");
         joinAsMember(workspace.id(), member);
         TaskResponse task = taskService.create(owner.getId(), workspace.id(),
@@ -75,27 +67,41 @@ class TaskNoteServiceTest extends AbstractIntegrationTest {
 
     @Test
     void upsertingAgainOverwritesContentAndUpdatedBy() {
-        User owner = newUser("note-overwrite-owner");
-        User member = newUser("note-overwrite-member");
+        User owner = createUniqueUser("note-overwrite-owner");
+        User member = createUniqueUser("note-overwrite-member");
         WorkspaceResponse workspace = workspaceService.create(owner.getId(), "노트 덮어쓰기 워크스페이스");
         joinAsMember(workspace.id(), member);
         TaskResponse task = taskService.create(owner.getId(), workspace.id(),
                 new TaskCreateRequest("노트 덮어쓰기 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
-        taskNoteService.upsert(owner.getId(), task.id(), "첫 버전");
+        TaskNoteResponse first = taskNoteService.upsert(owner.getId(), task.id(), "첫 버전");
 
         TaskNoteResponse response = taskNoteService.upsert(member.getId(), task.id(), "두번째 버전");
 
         assertThat(response.content()).isEqualTo("두번째 버전");
         assertThat(response.updatedBy().id()).isEqualTo(member.getId());
+        assertThat(response.updatedAt()).isAfterOrEqualTo(first.updatedAt());
 
         TaskNoteResponse fetched = taskNoteService.get(owner.getId(), task.id());
         assertThat(fetched.content()).isEqualTo("두번째 버전");
     }
 
     @Test
+    void upsertingEmptyStringClearsNoteContent() {
+        User owner = createUniqueUser("note-clear-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "노트 비우기 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("노트 비우기 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+        taskNoteService.upsert(owner.getId(), task.id(), "지울 내용");
+
+        TaskNoteResponse response = taskNoteService.upsert(owner.getId(), task.id(), "");
+
+        assertThat(response.content()).isEmpty();
+    }
+
+    @Test
     void nonMemberCannotGetOrUpsertNote() {
-        User owner = newUser("note-outsider-owner");
-        User outsider = newUser("note-outsider");
+        User owner = createUniqueUser("note-outsider-owner");
+        User outsider = createUniqueUser("note-outsider");
         WorkspaceResponse workspace = workspaceService.create(owner.getId(), "노트 비멤버 워크스페이스");
         TaskResponse task = taskService.create(owner.getId(), workspace.id(),
                 new TaskCreateRequest("노트 비멤버 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
@@ -108,7 +114,7 @@ class TaskNoteServiceTest extends AbstractIntegrationTest {
 
     @Test
     void deletingTaskAlsoDeletesItsNote() {
-        User owner = newUser("note-cascade-owner");
+        User owner = createUniqueUser("note-cascade-owner");
         WorkspaceResponse workspace = workspaceService.create(owner.getId(), "노트 삭제연쇄 워크스페이스");
         TaskResponse task = taskService.create(owner.getId(), workspace.id(),
                 new TaskCreateRequest("노트 삭제연쇄 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
