@@ -11,6 +11,7 @@ import com.motivhub.be.task.repository.TaskActivityLogRepository;
 import com.motivhub.be.task.repository.TaskAssigneeRepository;
 import com.motivhub.be.task.repository.TaskChecklistItemRepository;
 import com.motivhub.be.task.repository.TaskCommentRepository;
+import com.motivhub.be.task.repository.TaskNoteRepository;
 import com.motivhub.be.task.repository.TaskRepository;
 import com.motivhub.be.task.domain.TaskAssignee;
 import com.motivhub.be.task.event.AssigneeAddedEvent;
@@ -44,6 +45,7 @@ public class TaskService {
     private final TaskChecklistItemRepository taskChecklistItemRepository;
     private final TaskCommentRepository taskCommentRepository;
     private final TaskActivityLogRepository taskActivityLogRepository;
+    private final TaskNoteRepository taskNoteRepository;
     private final UserRepository userRepository;
     private final WorkspaceService workspaceService;
     private final TaskActivityLogService taskActivityLogService;
@@ -53,6 +55,7 @@ public class TaskService {
     public TaskService(TaskRepository taskRepository, TaskAssigneeRepository taskAssigneeRepository,
                         TaskChecklistItemRepository taskChecklistItemRepository,
                         TaskCommentRepository taskCommentRepository, TaskActivityLogRepository taskActivityLogRepository,
+                        TaskNoteRepository taskNoteRepository,
                         UserRepository userRepository, WorkspaceService workspaceService,
                         TaskActivityLogService taskActivityLogService, TaskAccessPolicy taskAccessPolicy,
                         ApplicationEventPublisher eventPublisher) {
@@ -61,6 +64,7 @@ public class TaskService {
         this.taskChecklistItemRepository = taskChecklistItemRepository;
         this.taskCommentRepository = taskCommentRepository;
         this.taskActivityLogRepository = taskActivityLogRepository;
+        this.taskNoteRepository = taskNoteRepository;
         this.userRepository = userRepository;
         this.workspaceService = workspaceService;
         this.taskActivityLogService = taskActivityLogService;
@@ -182,6 +186,7 @@ public class TaskService {
         taskCommentRepository.deleteByTaskId(taskId);
         taskActivityLogRepository.deleteByTaskId(taskId);
         taskChecklistItemRepository.deleteByTaskId(taskId);
+        taskNoteRepository.deleteByTaskId(taskId);
         taskRepository.delete(task);
         eventPublisher.publishEvent(new TaskChangedEvent(taskId, task.getWorkspace().getId(), TaskChangeType.DELETED));
     }
