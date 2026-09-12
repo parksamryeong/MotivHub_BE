@@ -192,6 +192,45 @@ class TaskPresenceEventListenerTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void disconnectingFirstSubscribedViewerIsRemovedFromRemainingViewersList() throws Exception {
+        User owner = newUser("presence-1st-disc-owner");
+        User teammate = newUser("presence-1st-disc-mate");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "프레즌스 첫 구독자 연결끊김 워크스페이스");
+        joinAsMember(workspace.id(), teammate);
+        TestTransaction.flagForCommit();
+        TestTransaction.end();
+        TestTransaction.start();
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("프레즌스 첫 구독자 연결끊김 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+        // STOMP 구독 처리는 별도 스레드(clientInboundChannel)에서 이루어지므로, 테스트 트랜잭션 안에서만
+        // 존재하는(아직 커밋되지 않은) 워크스페이스/태스크는 그 스레드에서 보이지 않는다. 커밋해서 넘겨준다.
+        TestTransaction.flagForCommit();
+        TestTransaction.end();
+        TestTransaction.start();
+
+        StompSession ownerSession = connectAsUser(owner);
+        BlockingQueue<TaskPresenceMessage> ownerMessages = subscribeToPresence(ownerSession, task.id());
+        assertThat(ownerMessages.poll(5, TimeUnit.SECONDS)).isNotNull(); // 본인 입장으로 [owner] 수신, 소비
+
+        StompSession teammateSession = connectAsUser(teammate);
+        BlockingQueue<TaskPresenceMessage> teammateMessages = subscribeToPresence(teammateSession, task.id());
+        assertThat(teammateMessages.poll(5, TimeUnit.SECONDS)).isNotNull(); // 자기 입장으로 [owner, teammate] 수신, 소비
+        assertThat(ownerMessages.poll(5, TimeUnit.SECONDS)).isNotNull(); // teammate 입장 갱신을 owner도 수신, 소비
+
+        // 두 세션 모두 각자의 커넥션에서 첫 구독이므로, 실제 STOMP 클라이언트(Spring의
+        // DefaultStompSession)는 흔히 둘 다 구독 id "0"을 사용한다. "나중에" 구독한 세션이 아니라
+        // "먼저" 구독한 세션(owner)을 끊어서, subscriptionId만으로 항목을 구분하던 예전 구현에서
+        // owner의 로컬/Redis 항목이 teammate의 구독으로 덮어써지는 버그를 드러낸다.
+        ownerSession.disconnect();
+
+        TaskPresenceMessage afterDisconnect = teammateMessages.poll(5, TimeUnit.SECONDS);
+        assertThat(afterDisconnect).isNotNull();
+        assertThat(afterDisconnect.viewers()).extracting(UserSummary::id).containsExactly(teammate.getId());
+
+        teammateSession.disconnect();
+    }
+
+    @Test
     void sameUserWithTwoSessionsAppearsOnceInViewerList() throws Exception {
         User owner = newUser("presence-multitab-owner");
         WorkspaceResponse workspace = workspaceService.create(owner.getId(), "프레즌스 멀티탭 워크스페이스");
