@@ -3,6 +3,8 @@ package com.motivhub.be.task.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.motivhub.be.issue.dto.IssueResponse;
+import com.motivhub.be.issue.service.IssueService;
 import com.motivhub.be.notification.dto.NotificationResponse;
 import com.motivhub.be.notification.service.NotificationService;
 import com.motivhub.be.support.AbstractIntegrationTest;
@@ -37,6 +39,7 @@ class TaskCommentServiceTest extends AbstractIntegrationTest {
     @Autowired private WorkspaceMemberRepository workspaceMemberRepository;
     @Autowired private UserRepository userRepository;
     @Autowired private NotificationService notificationService;
+    @Autowired private IssueService issueService;
 
     private User newUser(String suffix) {
         return userRepository.save(User.create(
@@ -288,5 +291,56 @@ class TaskCommentServiceTest extends AbstractIntegrationTest {
 
         assertThatThrownBy(() -> taskCommentService.delete(author.getId(), task.id(), created.id()))
                 .isInstanceOf(NotWorkspaceMemberException.class);
+    }
+
+    @Test
+    void anyMemberCanPromoteCommentToIssueEvenIfNotTheAuthor() {
+        User owner = newUser("promote-owner1");
+        User author = newUser("promote-author1");
+        User promoter = newUser("promote-member1");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "댓글 이슈화 워크스페이스1");
+        joinAsMember(workspace.id(), author);
+        joinAsMember(workspace.id(), promoter);
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("댓글 이슈화 태스크1", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+        TaskCommentResponse comment = taskCommentService.create(author.getId(), task.id(), "이건 알아둘 만한 트러블슈팅");
+
+        IssueResponse issue = taskCommentService.promoteToIssue(
+                promoter.getId(), task.id(), comment.id(), "댓글에서 옮긴 이슈");
+
+        assertThat(issue.title()).isEqualTo("댓글에서 옮긴 이슈");
+        assertThat(issue.problemDescription()).isEqualTo("이건 알아둘 만한 트러블슈팅");
+        assertThat(issue.workspaceId()).isEqualTo(workspace.id());
+        assertThat(issue.author().id()).isEqualTo(promoter.getId());
+        assertThat(issueService.getDetail(issue.id()).id()).isEqualTo(issue.id());
+        // 원본 댓글은 그대로 남아있어야 한다 - 이슈화는 댓글 기능에 영향을 주지 않는다.
+        assertThat(taskCommentService.list(owner.getId(), task.id()))
+                .extracting(TaskCommentResponse::content).containsExactly("이건 알아둘 만한 트러블슈팅");
+    }
+
+    @Test
+    void nonMemberCannotPromoteCommentToIssue() {
+        User owner = newUser("promote-owner2");
+        User outsider = newUser("promote-outsider2");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "댓글 이슈화 워크스페이스2");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("댓글 이슈화 태스크2", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+        TaskCommentResponse comment = taskCommentService.create(owner.getId(), task.id(), "비멤버 테스트 댓글");
+
+        assertThatThrownBy(() -> taskCommentService.promoteToIssue(
+                outsider.getId(), task.id(), comment.id(), "몰래 이슈화"))
+                .isInstanceOf(NotWorkspaceMemberException.class);
+    }
+
+    @Test
+    void promotingUnknownCommentThrows() {
+        User owner = newUser("promote-owner3");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "댓글 이슈화 워크스페이스3");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("댓글 이슈화 태스크3", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+
+        assertThatThrownBy(() -> taskCommentService.promoteToIssue(
+                owner.getId(), task.id(), 999_999L, "존재 안 하는 댓글"))
+                .isInstanceOf(TaskCommentNotFoundException.class);
     }
 }

@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.motivhub.be.auth.jwt.JwtProvider;
 import com.motivhub.be.support.AbstractIntegrationTest;
 import com.motivhub.be.task.dto.TaskCommentCreateRequest;
+import com.motivhub.be.task.dto.TaskCommentPromoteToIssueRequest;
 import com.motivhub.be.task.dto.TaskCommentUpdateRequest;
 import com.motivhub.be.task.dto.TaskCreateRequest;
 import com.motivhub.be.task.dto.TaskResponse;
@@ -152,5 +153,49 @@ class TaskCommentControllerTest extends AbstractIntegrationTest {
         mockMvc.perform(delete("/api/tasks/{taskId}/comments/{commentId}", task.id(), 999_999L)
                         .header("Authorization", "Bearer " + tokenFor(owner)))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void promotingCommentToIssueReturnsCreatedIssue() throws Exception {
+        User owner = newUser("c6-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "댓글 이슈화 API 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("댓글 이슈화 API 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+        String createResponse = mockMvc.perform(post("/api/tasks/{taskId}/comments", task.id())
+                        .header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new TaskCommentCreateRequest("API로 옮길 댓글"))))
+                .andReturn().getResponse().getContentAsString();
+        Long commentId = objectMapper.readTree(createResponse).get("id").asLong();
+
+        mockMvc.perform(post("/api/tasks/{taskId}/comments/{commentId}/promote-to-issue", task.id(), commentId)
+                        .header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new TaskCommentPromoteToIssueRequest("API 이슈 제목"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("API 이슈 제목"))
+                .andExpect(jsonPath("$.problemDescription").value("API로 옮길 댓글"))
+                .andExpect(jsonPath("$.workspaceId").value(workspace.id()));
+    }
+
+    @Test
+    void promotingCommentToIssueWithBlankTitleReturns400() throws Exception {
+        User owner = newUser("c7-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "댓글 이슈화 검증 API 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("댓글 이슈화 검증 API 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+        String createResponse = mockMvc.perform(post("/api/tasks/{taskId}/comments", task.id())
+                        .header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new TaskCommentCreateRequest("검증용 댓글"))))
+                .andReturn().getResponse().getContentAsString();
+        Long commentId = objectMapper.readTree(createResponse).get("id").asLong();
+
+        mockMvc.perform(post("/api/tasks/{taskId}/comments/{commentId}/promote-to-issue", task.id(), commentId)
+                        .header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new TaskCommentPromoteToIssueRequest(""))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
     }
 }

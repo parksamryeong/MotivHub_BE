@@ -1,6 +1,8 @@
 package com.motivhub.be.task.controller;
 
+import com.motivhub.be.issue.dto.IssueResponse;
 import com.motivhub.be.task.dto.TaskCommentCreateRequest;
+import com.motivhub.be.task.dto.TaskCommentPromoteToIssueRequest;
 import com.motivhub.be.task.dto.TaskCommentResponse;
 import com.motivhub.be.task.dto.TaskCommentUpdateRequest;
 import com.motivhub.be.task.service.TaskCommentService;
@@ -50,5 +52,12 @@ public class TaskCommentController {
             @AuthenticationPrincipal Long userId, @PathVariable Long taskId, @PathVariable Long commentId) {
         taskCommentService.delete(userId, taskId, commentId);
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/api/tasks/{taskId}/comments/{commentId}/promote-to-issue")
+    public ResponseEntity<IssueResponse> promoteToIssue(
+            @AuthenticationPrincipal Long userId, @PathVariable Long taskId, @PathVariable Long commentId,
+            @Valid @RequestBody TaskCommentPromoteToIssueRequest request) {
+        return ResponseEntity.ok(taskCommentService.promoteToIssue(userId, taskId, commentId, request.title()));
     }
 }
