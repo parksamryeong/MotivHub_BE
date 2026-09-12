@@ -13,9 +13,11 @@ import com.motivhub.be.workspace.exception.NotWorkspaceOwnerException;
 import com.motivhub.be.workspace.exception.WorkspaceLeaveRequiresTransferException;
 import com.motivhub.be.workspace.exception.WorkspaceMemberNotFoundException;
 import com.motivhub.be.workspace.exception.WorkspaceNotFoundException;
+import com.motivhub.be.workspace.event.WorkspaceMemberKickedEvent;
 import com.motivhub.be.workspace.repository.WorkspaceMemberRepository;
 import com.motivhub.be.workspace.repository.WorkspaceRepository;
 import java.util.List;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,13 +28,16 @@ public class WorkspaceService {
     private final WorkspaceRepository workspaceRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final UserRepository userRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     public WorkspaceService(WorkspaceRepository workspaceRepository,
                              WorkspaceMemberRepository workspaceMemberRepository,
-                             UserRepository userRepository) {
+                             UserRepository userRepository,
+                             ApplicationEventPublisher eventPublisher) {
         this.workspaceRepository = workspaceRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.userRepository = userRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
@@ -102,6 +107,7 @@ public class WorkspaceService {
         requireOwner(workspaceId, ownerUserId);
         WorkspaceMember target = getMembership(workspaceId, targetUserId);
         workspaceMemberRepository.delete(target);
+        eventPublisher.publishEvent(new WorkspaceMemberKickedEvent(workspaceId, targetUserId));
     }
 
     @Transactional
