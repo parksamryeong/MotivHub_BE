@@ -22,7 +22,7 @@ public class TaskTopicChannelInterceptor implements ChannelInterceptor {
     private static final String AUTH_HEADER = "Authorization";
     private static final String BEARER_PREFIX = "Bearer ";
     private static final String TOKEN_TYPE_ACCESS = "access";
-    private static final Pattern TASK_TOPIC_PATTERN = Pattern.compile("^/topic/tasks/(\\d+)$");
+    private static final Pattern TASK_TOPIC_PATTERN = Pattern.compile("^/topic/tasks/(\\d+)(?:/presence)?$");
 
     private final JwtProvider jwtProvider;
     private final WorkspaceService workspaceService;

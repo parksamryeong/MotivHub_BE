@@ -191,4 +191,30 @@ class TaskTopicChannelInterceptorTest extends AbstractIntegrationTest {
         assertThatThrownBy(() -> interceptor.preSend(message, null))
                 .isInstanceOf(StompAuthenticationException.class);
     }
+
+    @Test
+    void memberCanSubscribeToTaskPresenceTopic() {
+        User owner = newUser("presence-sub-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "프레즌스 구독 테스트 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("프레즌스 구독 테스트 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        Message<byte[]> message = subscribeMessage("/topic/tasks/" + task.id() + "/presence", owner.getId());
+
+        assertThatCode(() -> interceptor.preSend(message, null)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void nonMemberCannotSubscribeToTaskPresenceTopic() {
+        User owner = newUser("presence-sub-owner2");
+        User outsider = newUser("presence-sub-outsider");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "프레즌스 구독 권한 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("프레즌스 구독 권한 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        Message<byte[]> message = subscribeMessage("/topic/tasks/" + task.id() + "/presence", outsider.getId());
+
+        assertThatThrownBy(() -> interceptor.preSend(message, null))
+                .isInstanceOf(NotWorkspaceMemberException.class);
+    }
 }
