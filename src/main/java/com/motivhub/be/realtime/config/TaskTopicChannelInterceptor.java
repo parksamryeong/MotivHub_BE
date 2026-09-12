@@ -45,6 +45,8 @@ public class TaskTopicChannelInterceptor implements ChannelInterceptor {
             handleConnect(accessor);
         } else if (StompCommand.SUBSCRIBE.equals(accessor.getCommand())) {
             handleSubscribe(accessor);
+        } else if (StompCommand.SEND.equals(accessor.getCommand())) {
+            throw new StompAuthenticationException("클라이언트의 SEND는 허용되지 않습니다.");
         }
         return message;
     }
@@ -64,12 +66,9 @@ public class TaskTopicChannelInterceptor implements ChannelInterceptor {
 
     private void handleSubscribe(StompHeaderAccessor accessor) {
         String destination = accessor.getDestination();
-        if (destination == null) {
-            return;
-        }
-        Matcher matcher = TASK_TOPIC_PATTERN.matcher(destination);
-        if (!matcher.matches()) {
-            return;
+        Matcher matcher = destination == null ? null : TASK_TOPIC_PATTERN.matcher(destination);
+        if (matcher == null || !matcher.matches()) {
+            throw new StompAuthenticationException("구독할 수 없는 목적지입니다.");
         }
         Principal principal = accessor.getUser();
         if (principal == null) {

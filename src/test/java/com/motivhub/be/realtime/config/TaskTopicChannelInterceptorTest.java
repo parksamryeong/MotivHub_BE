@@ -56,6 +56,15 @@ class TaskTopicChannelInterceptorTest extends AbstractIntegrationTest {
         return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
     }
 
+    private Message<byte[]> sendMessage(String destination, Long userId) {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SEND);
+        accessor.setDestination(destination);
+        if (userId != null) {
+            accessor.setUser(new StompPrincipal(userId));
+        }
+        return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+    }
+
     @Test
     void connectWithValidTokenSetsUserOnAccessor() {
         User user = newUser("connect-ok");
@@ -115,6 +124,69 @@ class TaskTopicChannelInterceptorTest extends AbstractIntegrationTest {
                 new TaskCreateRequest("미인증 구독 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
 
         Message<byte[]> message = subscribeMessage("/topic/tasks/" + task.id(), null);
+
+        assertThatThrownBy(() -> interceptor.preSend(message, null))
+                .isInstanceOf(StompAuthenticationException.class);
+    }
+
+    @Test
+    void subscribeToWildcardTaskTopicThrowsEvenForLegitimateMember() {
+        User owner = newUser("sub-wildcard-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "와일드카드 구독 워크스페이스");
+        taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("와일드카드 구독 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        Message<byte[]> message = subscribeMessage("/topic/tasks/*", owner.getId());
+
+        assertThatThrownBy(() -> interceptor.preSend(message, null))
+                .isInstanceOf(StompAuthenticationException.class);
+    }
+
+    @Test
+    void subscribeToDoubleWildcardTopicThrowsEvenForLegitimateMember() {
+        User owner = newUser("sub-doublewildcard-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "이중 와일드카드 구독 워크스페이스");
+        taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("이중 와일드카드 구독 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        Message<byte[]> message = subscribeMessage("/topic/**", owner.getId());
+
+        assertThatThrownBy(() -> interceptor.preSend(message, null))
+                .isInstanceOf(StompAuthenticationException.class);
+    }
+
+    @Test
+    void subscribeToPatternSuffixedTaskTopicThrowsEvenForLegitimateMember() {
+        User owner = newUser("sub-suffixwildcard-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "접미사 와일드카드 구독 워크스페이스");
+        taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("접미사 와일드카드 구독 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        Message<byte[]> message = subscribeMessage("/topic/tasks/1*", owner.getId());
+
+        assertThatThrownBy(() -> interceptor.preSend(message, null))
+                .isInstanceOf(StompAuthenticationException.class);
+    }
+
+    @Test
+    void subscribeToNonTaskTopicThrowsEvenForLegitimateMember() {
+        User owner = newUser("sub-other-owner");
+        workspaceService.create(owner.getId(), "다른 목적지 구독 워크스페이스");
+
+        Message<byte[]> message = subscribeMessage("/topic/other", owner.getId());
+
+        assertThatThrownBy(() -> interceptor.preSend(message, null))
+                .isInstanceOf(StompAuthenticationException.class);
+    }
+
+    @Test
+    void sendCommandIsRejectedEvenForAuthenticatedMember() {
+        User owner = newUser("send-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "SEND 거부 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("SEND 거부 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        Message<byte[]> message = sendMessage("/topic/tasks/" + task.id(), owner.getId());
 
         assertThatThrownBy(() -> interceptor.preSend(message, null))
                 .isInstanceOf(StompAuthenticationException.class);
