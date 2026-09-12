@@ -9,9 +9,7 @@ import com.motivhub.be.realtime.dto.TaskBoardChangeMessage;
 import com.motivhub.be.support.AbstractIntegrationTest;
 import com.motivhub.be.task.dto.TaskCreateRequest;
 import com.motivhub.be.task.service.TaskService;
-import com.motivhub.be.user.domain.SocialProvider;
 import com.motivhub.be.user.domain.User;
-import com.motivhub.be.user.repository.UserRepository;
 import com.motivhub.be.workspace.domain.Workspace;
 import com.motivhub.be.workspace.domain.WorkspaceMember;
 import com.motivhub.be.workspace.domain.WorkspaceRole;
@@ -41,20 +39,20 @@ import org.springframework.web.socket.sockjs.client.SockJsClient;
 import org.springframework.web.socket.sockjs.client.WebSocketTransport;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-class WorkspaceMemberKickedSessionCleanerTest extends AbstractIntegrationTest {
+class WorkspaceMemberRemovedSessionCleanerTest extends AbstractIntegrationTest {
 
     @LocalServerPort
     private int port;
 
     @Autowired private TaskService taskService;
     @Autowired private WorkspaceService workspaceService;
-    @Autowired private UserRepository userRepository;
     @Autowired private WorkspaceMemberRepository workspaceMemberRepository;
     @Autowired private JwtProvider jwtProvider;
 
+    // createUniqueUser(AbstractIntegrationTest)를 재사용해서 이메일/닉네임 충돌을 원천 차단하고,
+    // 여기서는 STOMP 브로커가 다른 스레드에서 이 유저를 즉시 조회할 수 있도록 커밋만 추가로 처리한다.
     private User newUser(String suffix) {
-        User user = userRepository.save(User.create(
-                SocialProvider.GITHUB, "kick-cleanup-" + suffix, suffix + "@test.com", "user_" + suffix, null));
+        User user = createUniqueUser(suffix);
         TestTransaction.flagForCommit();
         TestTransaction.end();
         TestTransaction.start();
@@ -163,5 +161,51 @@ class WorkspaceMemberKickedSessionCleanerTest extends AbstractIntegrationTest {
 
         kickedSession.disconnect();
         stayingSession.disconnect();
+    }
+
+    @Test
+    void memberLeavingStopsReceivingBoardBroadcastsFromOtherSession() throws Exception {
+        User owner = newUser("leave-owner");
+        User member = newUser("leave-member");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "나가기 구독해제 워크스페이스");
+        joinAsMember(workspace.id(), member);
+        TestTransaction.flagForCommit();
+        TestTransaction.end();
+        TestTransaction.start();
+
+        // member는 STOMP로 보드를 구독해둔 상태 - 그런데 나가기(leave) 자체는 이 세션이 직접 호출하는
+        // 게 아니라 서비스로 바로 호출해서, "다른 탭/기기에서 나가기를 눌렀다"는 상황을 재현한다. 이
+        // 세션은 자기가 나갔다는 걸 스스로 알 방법이 없으므로, 서버가 구독을 대신 정리해줘야 한다.
+        StompSession memberSession = connectAsUser(member);
+        BlockingQueue<TaskBoardChangeMessage> memberMessages = subscribeToBoard(memberSession, workspace.id());
+        StompSession ownerSession = connectAsUser(owner);
+        BlockingQueue<TaskBoardChangeMessage> ownerMessages = subscribeToBoard(ownerSession, workspace.id());
+
+        TestTransaction.flagForCommit();
+        taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("나가기 전 생성 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+        TestTransaction.end();
+        TestTransaction.start();
+
+        assertThat(ownerMessages.poll(5, TimeUnit.SECONDS)).isNotNull();
+        assertThat(memberMessages.poll(5, TimeUnit.SECONDS)).isNotNull();
+
+        TestTransaction.flagForCommit();
+        workspaceService.leave(member.getId(), workspace.id());
+        TestTransaction.end();
+        TestTransaction.start();
+        Thread.sleep(500); // 구독 해제 메시지가 브로커에 실제로 반영될 시간 확보
+
+        TestTransaction.flagForCommit();
+        taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("나가기 후 생성 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+        TestTransaction.end();
+        TestTransaction.start();
+
+        assertThat(ownerMessages.poll(5, TimeUnit.SECONDS)).isNotNull();
+        assertThat(memberMessages.poll(2, TimeUnit.SECONDS)).isNull();
+
+        memberSession.disconnect();
+        ownerSession.disconnect();
     }
 }

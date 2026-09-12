@@ -13,7 +13,7 @@ import com.motivhub.be.workspace.exception.NotWorkspaceOwnerException;
 import com.motivhub.be.workspace.exception.WorkspaceLeaveRequiresTransferException;
 import com.motivhub.be.workspace.exception.WorkspaceMemberNotFoundException;
 import com.motivhub.be.workspace.exception.WorkspaceNotFoundException;
-import com.motivhub.be.workspace.event.WorkspaceMemberKickedEvent;
+import com.motivhub.be.workspace.event.WorkspaceMemberRemovedEvent;
 import com.motivhub.be.workspace.repository.WorkspaceMemberRepository;
 import com.motivhub.be.workspace.repository.WorkspaceRepository;
 import java.util.List;
@@ -97,9 +97,11 @@ public class WorkspaceService {
                         "다른 멤버가 있는 워크스페이스는 오너십을 이전한 후에만 나갈 수 있습니다.");
             }
             member.getWorkspace().delete();
+            eventPublisher.publishEvent(new WorkspaceMemberRemovedEvent(workspaceId, userId));
             return;
         }
         workspaceMemberRepository.delete(member);
+        eventPublisher.publishEvent(new WorkspaceMemberRemovedEvent(workspaceId, userId));
     }
 
     @Transactional
@@ -107,7 +109,7 @@ public class WorkspaceService {
         requireOwner(workspaceId, ownerUserId);
         WorkspaceMember target = getMembership(workspaceId, targetUserId);
         workspaceMemberRepository.delete(target);
-        eventPublisher.publishEvent(new WorkspaceMemberKickedEvent(workspaceId, targetUserId));
+        eventPublisher.publishEvent(new WorkspaceMemberRemovedEvent(workspaceId, targetUserId));
     }
 
     @Transactional
