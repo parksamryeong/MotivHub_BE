@@ -151,6 +151,54 @@ class TaskChangeBroadcasterTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void memberReceivesBroadcastWhenTaskIsDeleted() throws Exception {
+        User owner = newUser("bcast-delete");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "웹소켓 삭제 브로드캐스트 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("웹소켓 삭제 브로드캐스트 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+        TestTransaction.flagForCommit();
+        TestTransaction.end();
+        TestTransaction.start();
+
+        WebSocketStompClient stompClient = new WebSocketStompClient(
+                new SockJsClient(List.of(new WebSocketTransport(new StandardWebSocketClient()))));
+        stompClient.setMessageConverter(new MappingJackson2MessageConverter());
+
+        StompHeaders connectHeaders = new StompHeaders();
+        connectHeaders.add("Authorization", "Bearer " + jwtProvider.generateAccessToken(owner.getId()));
+
+        StompSession session = stompClient.connectAsync(
+                        "ws://localhost:" + port + "/ws", new WebSocketHttpHeaders(), connectHeaders,
+                        new StompSessionHandlerAdapter() {})
+                .get(5, TimeUnit.SECONDS);
+
+        BlockingQueue<TaskChangedMessage> messages = new LinkedBlockingQueue<>();
+        session.subscribe("/topic/tasks/" + task.id(), new StompFrameHandler() {
+            @Override
+            public Type getPayloadType(StompHeaders headers) {
+                return TaskChangedMessage.class;
+            }
+
+            @Override
+            public void handleFrame(StompHeaders headers, Object payload) {
+                messages.add((TaskChangedMessage) payload);
+            }
+        });
+        Thread.sleep(500); // 구독 프레임이 서버에 실제로 등록될 시간 확보(구독은 비동기)
+
+        TestTransaction.flagForCommit();
+        taskService.delete(owner.getId(), task.id());
+        TestTransaction.end();
+        TestTransaction.start();
+
+        TaskChangedMessage received = messages.poll(5, TimeUnit.SECONDS);
+        assertThat(received).isNotNull();
+        assertThat(received.taskId()).isEqualTo(task.id());
+
+        session.disconnect();
+    }
+
+    @Test
     void nonMemberSubscribeIsRejectedOverRealStompConnection() throws Exception {
         User owner = newUser("bcast-outsider-owner");
         User outsider = newUser("bcast-outsider");

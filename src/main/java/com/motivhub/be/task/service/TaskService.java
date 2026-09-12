@@ -15,6 +15,7 @@ import com.motivhub.be.task.repository.TaskRepository;
 import com.motivhub.be.task.domain.TaskAssignee;
 import com.motivhub.be.task.event.AssigneeAddedEvent;
 import com.motivhub.be.task.event.TaskChangedEvent;
+import com.motivhub.be.task.event.TaskChangeType;
 import com.motivhub.be.task.exception.InvalidTaskStatusTransitionException;
 import com.motivhub.be.user.domain.User;
 import com.motivhub.be.user.dto.UserSummary;
@@ -84,6 +85,7 @@ public class TaskService {
                     .orElseThrow(() -> new UserNotFoundException("유저를 찾을 수 없습니다."));
             taskAssigneeRepository.save(TaskAssignee.create(task, assignee));
         }
+        eventPublisher.publishEvent(new TaskChangedEvent(task.getId(), workspaceId, TaskChangeType.CREATED));
         return TaskResponse.of(task, getAssigneeSummaries(task.getId()));
     }
 
@@ -111,6 +113,11 @@ public class TaskService {
                 .orElseThrow(() -> new TaskNotFoundException("태스크를 찾을 수 없습니다."));
     }
 
+    public TaskResponse getResponseForBoardBroadcast(Long taskId) {
+        Task task = getTask(taskId);
+        return TaskResponse.of(task, getAssigneeSummaries(taskId));
+    }
+
     List<UserSummary> getAssigneeSummaries(Long taskId) {
         return taskAssigneeRepository.findByTaskId(taskId).stream()
                 .map(assignee -> UserSummary.from(assignee.getUser()))
@@ -133,7 +140,7 @@ public class TaskService {
             taskActivityLogService.record(task, actor, TaskActivityAction.UPDATE_CONTENT,
                     "description", oldDescription, task.getDescription());
         }
-        eventPublisher.publishEvent(new TaskChangedEvent(taskId));
+        eventPublisher.publishEvent(new TaskChangedEvent(taskId, task.getWorkspace().getId(), TaskChangeType.UPDATED));
         return TaskResponse.of(task, getAssigneeSummaries(taskId));
     }
 
@@ -158,7 +165,7 @@ public class TaskService {
             taskActivityLogService.record(task, actor, TaskActivityAction.CHANGE_STATUS,
                     "status", oldStatus.name(), task.getStatus().name());
         }
-        eventPublisher.publishEvent(new TaskChangedEvent(taskId));
+        eventPublisher.publishEvent(new TaskChangedEvent(taskId, task.getWorkspace().getId(), TaskChangeType.UPDATED));
         return TaskResponse.of(task, getAssigneeSummaries(taskId));
     }
 
@@ -176,6 +183,7 @@ public class TaskService {
         taskActivityLogRepository.deleteByTaskId(taskId);
         taskChecklistItemRepository.deleteByTaskId(taskId);
         taskRepository.delete(task);
+        eventPublisher.publishEvent(new TaskChangedEvent(taskId, task.getWorkspace().getId(), TaskChangeType.DELETED));
     }
 
     @Transactional
@@ -193,7 +201,7 @@ public class TaskService {
             taskActivityLogService.record(task, actor, TaskActivityAction.CHANGE_STATUS,
                     "status", oldStatus.name(), newStatus.name());
         }
-        eventPublisher.publishEvent(new TaskChangedEvent(taskId));
+        eventPublisher.publishEvent(new TaskChangedEvent(taskId, task.getWorkspace().getId(), TaskChangeType.UPDATED));
         return TaskResponse.of(task, getAssigneeSummaries(taskId));
     }
 
@@ -210,7 +218,7 @@ public class TaskService {
                     .orElseThrow(() -> new UserNotFoundException("유저를 찾을 수 없습니다."));
             taskActivityLogService.record(task, actor, TaskActivityAction.ADD_ASSIGNEE, "assignee", null, target.getNickname());
             eventPublisher.publishEvent(new AssigneeAddedEvent(taskId, targetUserId));
-            eventPublisher.publishEvent(new TaskChangedEvent(taskId));
+            eventPublisher.publishEvent(new TaskChangedEvent(taskId, task.getWorkspace().getId(), TaskChangeType.UPDATED));
         }
         return TaskResponse.of(task, getAssigneeSummaries(taskId));
     }
@@ -226,7 +234,7 @@ public class TaskService {
                             .orElseThrow(() -> new UserNotFoundException("유저를 찾을 수 없습니다."));
                     taskActivityLogService.record(task, actor, TaskActivityAction.REMOVE_ASSIGNEE,
                             "assignee", assignee.getUser().getNickname(), null);
-                    eventPublisher.publishEvent(new TaskChangedEvent(taskId));
+                    eventPublisher.publishEvent(new TaskChangedEvent(taskId, task.getWorkspace().getId(), TaskChangeType.UPDATED));
                 });
         return TaskResponse.of(task, getAssigneeSummaries(taskId));
     }
