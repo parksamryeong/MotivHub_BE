@@ -109,17 +109,32 @@ class WorkspaceMemberKickedSessionCleanerTest extends AbstractIntegrationTest {
         User kicked = newUser("kicked");
         User staying = newUser("staying");
         WorkspaceResponse workspace = workspaceService.create(owner.getId(), "추방 구독해제 워크스페이스");
+        WorkspaceResponse otherWorkspace = workspaceService.create(owner.getId(), "추방과 무관한 워크스페이스");
         joinAsMember(workspace.id(), kicked);
         joinAsMember(workspace.id(), staying);
+        joinAsMember(otherWorkspace.id(), kicked);
         TestTransaction.flagForCommit();
         TestTransaction.end();
         TestTransaction.start();
 
         StompSession kickedSession = connectAsUser(kicked);
         BlockingQueue<TaskBoardChangeMessage> kickedMessages = subscribeToBoard(kickedSession, workspace.id());
+        BlockingQueue<TaskBoardChangeMessage> kickedOtherWorkspaceMessages =
+                subscribeToBoard(kickedSession, otherWorkspace.id());
         StompSession stayingSession = connectAsUser(staying);
         BlockingQueue<TaskBoardChangeMessage> stayingMessages = subscribeToBoard(stayingSession, workspace.id());
-        Thread.sleep(500); // 구독 프레임이 서버에 실제로 등록될 시간 확보(구독은 비동기)
+
+        TestTransaction.flagForCommit();
+        taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("추방 전 생성 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+        TestTransaction.end();
+        TestTransaction.start();
+
+        // 추방 전: 두 구독 모두 살아있다는 것부터 확인 - 이후 "추방된 사람은 못 받는다" 검증이 의미
+        // 있으려면(구독이 애초에 등록조차 안 된 채로 우연히 통과하는 게 아니라) 먼저 정상 수신을
+        // 증명해야 한다.
+        assertThat(stayingMessages.poll(5, TimeUnit.SECONDS)).isNotNull();
+        assertThat(kickedMessages.poll(5, TimeUnit.SECONDS)).isNotNull();
 
         TestTransaction.flagForCommit();
         workspaceService.kick(owner.getId(), workspace.id(), kicked.getId());
@@ -130,6 +145,8 @@ class WorkspaceMemberKickedSessionCleanerTest extends AbstractIntegrationTest {
         TestTransaction.flagForCommit();
         taskService.create(owner.getId(), workspace.id(),
                 new TaskCreateRequest("추방 후 생성 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+        taskService.create(owner.getId(), otherWorkspace.id(),
+                new TaskCreateRequest("무관한 워크스페이스 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
         TestTransaction.end();
         TestTransaction.start();
 
@@ -138,6 +155,11 @@ class WorkspaceMemberKickedSessionCleanerTest extends AbstractIntegrationTest {
 
         TaskBoardChangeMessage kickedReceived = kickedMessages.poll(2, TimeUnit.SECONDS);
         assertThat(kickedReceived).isNull();
+
+        // 추방은 딱 그 워크스페이스의 보드 구독만 해제해야 한다 - 같은 세션의 다른 워크스페이스 보드
+        // 구독은 그대로 살아있어야 한다.
+        TaskBoardChangeMessage kickedOtherWorkspaceReceived = kickedOtherWorkspaceMessages.poll(5, TimeUnit.SECONDS);
+        assertThat(kickedOtherWorkspaceReceived).isNotNull();
 
         kickedSession.disconnect();
         stayingSession.disconnect();

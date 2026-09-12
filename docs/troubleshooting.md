@@ -322,3 +322,38 @@
   값(세션ID)과 조합해서 합성키로 만들어야 안전했다.
 
 ---
+
+## [2026-09-13] "특정 구독 하나만 서버가 조용히 강제 해제" — 공개 API가 없어서 Spring 내부 동작을 소스로 직접 검증한 사례
+
+- **상황**: 워크스페이스에서 추방된 멤버가 소켓 연결을 안 끊으면 보드 브로드캐스트(전체 태스크 데이터
+  포함)를 계속 받는 문제를 고치면서, "연결은 유지한 채 특정 구독 하나만 서버가 강제로 없앤다"는 기능이
+  필요했다. Spring은 이런 용도의 공개 API를 제공하지 않는다 — 세션 전체를 끊는 방법(ERROR 프레임 전송 +
+  `session.close()`, 이 프로젝트가 SUBSCRIBE 거부 시 이미 쓰고 있는 방식)은 있어도, "이 세션의 이 구독만"
+  없애는 문서화된 방법은 없다.
+- **조사**: Spring 메시징 소스(`spring-messaging`/`spring-websocket` 7.0.8, 로컬 Gradle 캐시의
+  `-sources.jar`를 직접 풀어서 읽음)를 뒤져서 찾은 우회로: `SimpleBrokerMessageHandler.handleMessageInternal`은
+  들어오는 메시지가 `SimpMessageType.UNSUBSCRIBE`면 `AbstractSubscriptionRegistry.unregisterSubscription(message)`를
+  호출하는데, 이 메서드는 메시지 헤더에서 `sessionId`/`subscriptionId`만 읽어서 처리한다 — **메시지가
+  진짜 클라이언트 STOMP 프레임에서 왔는지는 전혀 검사하지 않는다.** 즉 이 두 헤더만 채운 합성 메시지를
+  `clientInboundChannel`에 직접 보내면 실제 UNSUBSCRIBE 프레임과 동일하게 처리된다.
+- **검증**: 이 우회로가 실제로 "조용히, 안전하게" 동작하는지는 최종 리뷰(opus)에서 같은 소스를 다시 파고들어
+  확인했다. 우연히 우리 쪽에 유리하게 떨어진 지점이 두 군데 있었다:
+  1. 합성 메시지엔 `destination` 헤더가 없는데, `AbstractBrokerMessageHandler.checkDestinationPrefix`는
+     destination이 `null`이면 곧바로 `true`(통과)를 반환한다 — 반대로 구현됐다면 이 메시지 자체가 브로커
+     단계에서 조용히 무시됐을 것.
+  2. 이 프로젝트의 `TaskTopicChannelInterceptor.preSend`는 `MessageHeaderAccessor.getAccessor(message,
+     StompHeaderAccessor.class)`로 STOMP 프레임인지 확인하는데, 합성 메시지의 `SimpMessageHeaderAccessor`는
+     `StompHeaderAccessor`의 인스턴스가 아니라서 `null`을 반환하고 인터셉터가 그냥 통과시킨다 — 반대로
+     이 인터셉터가 좀 더 느슨하게 아무 메시지나 다 검사하도록 짜여 있었다면 이 우회로 자체가 막혔을 것.
+
+  또한 `DefaultSimpUserRegistry`(`SimpUser.getSessions()`/`SimpSession.getSubscriptions()`)가 매번 새
+  `HashSet`으로 복사해서 반환한다는 것도 소스로 확인해서, 순회 중 구독 해제를 호출해도
+  `ConcurrentModificationException`이 안 난다는 걸 추측이 아니라 사실로 확정했다.
+- **결과**: 리뷰에서 나온 추가 지적(구독 범위를 넘어서는 부작용이 없는지 테스트로 직접 증명 안 돼 있었음,
+  세션 여러 개 중 하나 처리 실패 시 나머지를 포기하고 넘어감) 둘 다 반영. 교훈: "표준 API가 없어서 내부
+  구현에 의존하는 우회로"를 쓸 때는, 그 우회로가 의도한 대로 동작하는 이유를 문서(레퍼런스/블로그)가
+  아니라 **그 버전의 실제 소스로 직접 검증**해야 한다 — 이번 경우처럼 "이렇게 될 것 같다"가 맞았어도, 그게
+  맞은 이유가 여러 세부 동작(널 체크 방향, 타입 체크 방식)이 우연히 유리하게 겹친 결과라면, 다음
+  버전업이나 비슷한 패턴을 다른 곳에 재사용할 때 똑같이 안전하다는 보장이 없다.
+
+---

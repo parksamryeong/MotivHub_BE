@@ -1,5 +1,6 @@
 package com.motivhub.be.realtime.service;
 
+import com.motivhub.be.realtime.config.RealtimeDestinations;
 import com.motivhub.be.realtime.dto.TaskBoardChangeMessage;
 import com.motivhub.be.task.dto.TaskResponse;
 import com.motivhub.be.task.event.TaskChangeType;
@@ -32,7 +33,7 @@ public class TaskBoardBroadcaster {
                     ? null
                     : taskService.getResponseForBoardBroadcast(event.taskId());
             messagingTemplate.convertAndSend(
-                    "/topic/workspaces/" + event.workspaceId() + "/tasks",
+                    RealtimeDestinations.workspaceBoard(event.workspaceId()),
                     new TaskBoardChangeMessage(event.changeType(), event.taskId(), task));
         } catch (Exception e) {
             log.warn("보드 브로드캐스트 실패 - taskId={}, workspaceId={}", event.taskId(), event.workspaceId(), e);

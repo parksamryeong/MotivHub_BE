@@ -1,5 +1,6 @@
 package com.motivhub.be.realtime.service;
 
+import com.motivhub.be.realtime.config.RealtimeDestinations;
 import com.motivhub.be.workspace.event.WorkspaceMemberKickedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,32 +33,52 @@ public class WorkspaceMemberKickedSessionCleaner {
         this.clientInboundChannel = clientInboundChannel;
     }
 
+    // 참고: 여기서 조회하는 SimpUserRegistry는 이 클래스가 보내는 합성 UNSUBSCRIBE 메시지를 인지하지
+    // 못한다 - SessionUnsubscribeEvent는 실제 STOMP 프레임이 StompSubProtocolHandler를 거칠 때만
+    // 발행되는데, 이 메시지는 clientInboundChannel로 직접 들어가 그 경로를 우회한다. 브로커의 구독
+    // 레지스트리(실제 전달 여부를 결정하는 쪽)에서는 확실히 제거되므로 기능상 문제는 없지만,
+    // SimpUserRegistry 자체는 세션이 끊길 때까지 이 구독을 계속 보여줄 수 있다 - "현재 살아있는 구독
+    // 목록"의 근거로 SimpUserRegistry를 쓰는 다른 코드가 생기면 이 괴리를 고려해야 한다.
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onMemberKicked(WorkspaceMemberKickedEvent event) {
         try {
-            String destination = "/topic/workspaces/" + event.workspaceId() + "/tasks";
+            String destination = RealtimeDestinations.workspaceBoard(event.workspaceId());
             SimpUser user = simpUserRegistry.getUser(String.valueOf(event.userId()));
             if (user == null) {
                 return;
             }
             for (SimpSession session : user.getSessions()) {
                 for (SimpSubscription subscription : session.getSubscriptions()) {
-                    if (destination.equals(subscription.getDestination())) {
+                    if (!destination.equals(subscription.getDestination())) {
+                        continue;
+                    }
+                    // 구독마다 개별 처리 - 한 세션(탭/기기)에서 실패해도 나머지 세션의 구독 해제는
+                    // 계속 시도해야 한다.
+                    try {
                         unsubscribe(session.getId(), subscription.getId());
+                        log.info(
+                                "추방된 멤버의 보드 구독 강제 해제 - workspaceId={}, userId={}, sessionId={}, subscriptionId={}",
+                                event.workspaceId(), event.userId(), session.getId(), subscription.getId());
+                    } catch (Exception e) {
+                        log.error(
+                                "추방된 멤버의 보드 구독 해제 실패 - workspaceId={}, userId={}, sessionId={}, subscriptionId={}",
+                                event.workspaceId(), event.userId(), session.getId(), subscription.getId(), e);
                     }
                 }
             }
         } catch (Exception e) {
-            log.warn("추방된 멤버의 보드 구독 해제 실패 - workspaceId={}, userId={}",
+            log.error("추방된 멤버의 보드 구독 정리 처리 실패 - workspaceId={}, userId={}",
                     event.workspaceId(), event.userId(), e);
         }
     }
 
     private void unsubscribe(String sessionId, String subscriptionId) {
+        // clientInboundChannel은 ExecutorSubscribableChannel이라 send()는 브로커 실행기에 작업을
+        // 제출한 뒤 곧바로 반환한다(비동기) - 실제 구독 해제는 다른 스레드에서 수행되므로, 이 메서드가
+        // 던지는 예외는 "제출 자체"의 실패만 잡을 뿐 브로커 처리 결과까지 보장하지 않는다.
         SimpMessageHeaderAccessor accessor = SimpMessageHeaderAccessor.create(SimpMessageType.UNSUBSCRIBE);
         accessor.setSessionId(sessionId);
         accessor.setSubscriptionId(subscriptionId);
-        accessor.setLeaveMutable(true);
         Message<byte[]> message = MessageBuilder.createMessage(EMPTY_PAYLOAD, accessor.getMessageHeaders());
         clientInboundChannel.send(message);
     }
