@@ -42,7 +42,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry registry) {
-        registry.enableSimpleBroker("/topic")
+        registry.enableSimpleBroker("/topic", "/queue")
                 .setTaskScheduler(taskSchedulerProvider.getObject())
                 .setHeartbeatValue(new long[] {HEARTBEAT_INTERVAL_MS, HEARTBEAT_INTERVAL_MS});
         // 클라이언트가 SEND하는 편집 업데이트/스냅샷 응답(/app/...)을 @MessageMapping 컨트롤러로
