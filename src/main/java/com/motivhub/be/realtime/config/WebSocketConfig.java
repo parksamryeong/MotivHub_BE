@@ -45,6 +45,9 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         registry.enableSimpleBroker("/topic")
                 .setTaskScheduler(taskSchedulerProvider.getObject())
                 .setHeartbeatValue(new long[] {HEARTBEAT_INTERVAL_MS, HEARTBEAT_INTERVAL_MS});
+        // 클라이언트가 SEND하는 편집 업데이트/스냅샷 응답(/app/...)을 @MessageMapping 컨트롤러로
+        // 라우팅하기 위한 프리픽스. 지금까지는 SEND를 전면 거부해서 필요 없었다.
+        registry.setApplicationDestinationPrefixes("/app");
     }
 
     @Override
