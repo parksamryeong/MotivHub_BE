@@ -393,3 +393,70 @@
   또 다른 사례.
 
 ---
+
+## [2026-09-13] STOMP UNSUBSCRIBE 프레임엔 destination이 없어서, 계획서가 직접 지정한 코드가 애초에 동작 불가능했던 사례
+
+- **상황**: CRDT 실시간 공동편집 서브프로젝트 8번 태스크 — "편집 토픽 구독을 해제하면 남은 버퍼를
+  즉시 저장 시도한다"는 리스너를 구현하는 중. 계획서(plan)가 직접 지정한 코드는
+  `SessionUnsubscribeEvent`에서 `StompHeaderAccessor.getDestination()`을 읽어 어느 토픽인지 판단하는
+  방식이었다.
+- **원인**: 이 계획서의 가정 자체가 틀렸다. 실제 STOMP UNSUBSCRIBE 프레임은 SUBSCRIBE 때 클라이언트가
+  정한 `id` 헤더만 싣고 다니고, destination은 아예 안 실린다 — SUBSCRIBE는 "무엇을 구독할지" 알려줘야
+  하니 destination이 필수지만, UNSUBSCRIBE는 "그 구독 id를 취소한다"는 뜻이라 destination을 다시 보낼
+  이유가 없기 때문. Spring 7.0.8 소스(`DefaultStompSession.unsubscribe()`, `StompSubProtocolHandler`)로
+  직접 확인 — 클라이언트도, 서버도 UNSUBSCRIBE 프레임에 destination을 채워 넣는 코드가 어디에도 없다.
+  그래서 계획서가 지정한 `accessor.getDestination()`은 항상 `null`을 반환해, 이 리스너는 실제 클라이언트
+  UNSUBSCRIBE에 대해 단 한 번도 발동하지 못하는 죽은 코드였다.
+- **해결**: 이미 같은 패키지에 있던 `TaskPresenceEventListener`가 정확히 같은 문제를 먼저 풀어놓은
+  상태였다 — SUBSCRIBE 시점에 `(sessionId, subscriptionId) → 정보`를 인메모리에 기록해뒀다가, 나중에
+  UNSUBSCRIBE가 (destination 없이) sessionId+subscriptionId만 들고 오면 그걸로 아까 기록해둔 정보를
+  찾아 쓰는 패턴. 이번 리스너도 그대로 재사용해서 SUBSCRIBE 때 taskId/field를 기록해두고
+  UNSUBSCRIBE 때 꺼내 쓰도록 고쳤다.
+- **결과**: 사람이 쓴 설계 문서·구현 계획이라도 프로토콜 세부사항(이번엔 "STOMP 프레임 종류별로 정확히
+  어떤 헤더가 실리는가")을 잘못 가정하면 그대로 죽은 코드가 될 수 있다 — 특히 이번 경우처럼 컴파일도
+  되고, 단위 테스트도 (destination을 수동으로 채운 합성 이벤트로 테스트했다면) 통과했을 만한 종류의
+  버그라 실제 STOMP 클라이언트로 end-to-end 테스트를 돌려보지 않았다면 프로덕션에서야 발견됐을 것.
+  이미 같은 코드베이스에 같은 문제를 풀어놓은 선례(`TaskPresenceEventListener`)가 있다면, 계획서의
+  글자 그대로보다 그 선례의 패턴을 우선시하는 게 맞다는 것도 확인.
+
+---
+
+## [2026-09-13] `enableSimpleBroker("/topic")`에 `/queue`가 빠져서 `/user/queue/...` 구독·전송이 조용히 무시되던 문제
+
+- **상황**: 같은 서브프로젝트에서 "늦게 참여하는 사람에게 미저장 버퍼를 그 사람에게만 재생해주는"
+  기능을 붙이면서 `SimpMessagingTemplate.convertAndSendToUser(...)` + `/user/queue/...` 구독을 처음
+  도입. 테스트가 재생 메시지를 못 받고 계속 타임아웃.
+- **원인**: Spring은 `/user/queue/...` 구독을 받으면 `UserDestinationMessageHandler`가 내부적으로
+  `/queue/...-user<세션ID>`라는 실제(physical) 목적지로 바꿔서 브로커에 등록한다. 그런데
+  `WebSocketConfig`는 `registry.enableSimpleBroker("/topic")`만 해놨었다 — 브로커가 관리하는
+  프리픽스에 `/queue`가 없으니, 이 변환된 목적지는 브로커 어디에도 등록되지 않고 조용히 무시된다.
+  에러도, 로그도 없이 그냥 아무 일도 안 일어난다.
+- **해결**: `registry.enableSimpleBroker("/topic", "/queue")`로 `/queue` 프리픽스를 추가.
+- **결과**: `convertAndSendToUser`/`/user/**` 구독을 새로 도입할 때는 브로커의 관리 프리픽스 목록에
+  실제로 변환되는 목적지(`/queue/...` 등)가 포함돼 있는지부터 확인해야 한다 — 이 설정 하나가
+  빠지면 인가 로직이나 비즈니스 로직은 전부 맞아도 기능 자체가 조용히 동작하지 않는다.
+
+---
+
+## [2026-09-13] "메타 키가 먼저 만료될까봐" 걱정하며 추가한 TTL 갱신이, 오히려 무한 재시도 루프를 만든 사례
+
+- **상황**: 최종 브랜치 리뷰에서 나온 여러 지적사항을 한 번에 고치는 수정 묶음(fix wave) 중 하나로,
+  "혹시 폴링과 저장 요청 사이에 메타 키의 TTL이 먼저 만료되면 살아있는 버퍼의 메타데이터만 사라질 수
+  있다"는 (검증 안 된) 우려로 `TaskEditBufferService.markRequested()`에 메타 키 TTL 갱신 한 줄을
+  추가했다. 스코프 재리뷰(재검증 담당 서브에이전트)가 이 한 줄이 새로운 회귀를 만들었다고 잡아냈다.
+- **원인**: 애초에 그 우려의 전제가 틀렸다 — `appendUpdate()`가 버퍼 키와 메타 키 둘 다 같은 순간에
+  TTL을 건다(`redisTemplate.expire(bufferKey, ...)`, `redisTemplate.expire(metaKey, ...)`가 나란히
+  호출됨). 그래서 메타 키만 따로 먼저 만료될 방법이 없는데도, 방어적으로 메타 키의 TTL만 갱신하는
+  코드를 추가해버렸다. 그 결과 자동저장 폴러가 `retry-seconds`마다 `markRequested()`를 호출할
+  때마다(아무도 응답 안 하는 상황이 오래가면) 메타 키의 TTL이 계속 연장돼 사실상 영구히 살아남게
+  됐다 — 반면 버퍼 키(실제 타이핑 데이터가 든)는 원래 TTL(1시간)대로 만료된다. `metadata()`는
+  메타 키만 보고 판단하므로 계속 "버퍼가 있다"고 착각해서 저장 요청을 영원히 재발송한다 — 정확히
+  이번 수정 묶음이 없애려던 그 "재시도 폭주" 버그를, 다른 경로로 되살린 셈.
+- **해결**: 추가했던 TTL 갱신 한 줄을 그대로 되돌렸다.
+- **결과**: "혹시 몰라서" 추가하는 방어적 코드는 그 우려가 실제로 근거가 있는지 먼저 확인해야 한다 —
+  이번엔 근거 확인 없이 "동일한 패턴을 다른 메서드에도 똑같이 적용"(`appendUpdate`가 TTL을 갱신하니
+  `markRequested`도 갱신하자)한 게 문제였다. 두 메서드가 다루는 두 키(버퍼/메타)의 생명주기가 원래는
+  묶여 있었는데, 한쪽만 독립적으로 연장하면서 그 결합이 깨진 것 — "같은 패턴처럼 보이는 코드"를
+  복붙하기 전에 왜 원본 코드가 그렇게 돼 있는지부터 이해해야 한다는, 흔하지만 재확인된 교훈.
+
+---
