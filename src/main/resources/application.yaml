@@ -68,6 +68,11 @@ jwt:
 
 app:
   frontend-url: ${FRONTEND_URL:http://localhost:3000}
+  task-edit:
+    autosave:
+      idle-seconds: 3
+      max-wait-seconds: 15
+      retry-seconds: 2
 
 # Swagger/OpenAPI는 기본적으로 비활성화 (보안-우선 원칙: 프로덕션 환경에 문서 노출 방지)
 # 로컬 개발 환경에서만 활성화하려면 SWAGGER_ENABLED=true 환경변수 설정

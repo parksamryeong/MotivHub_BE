@@ -26,3 +26,9 @@ spring:
           naver:
             client-id: test-naver-client-id
             client-secret: test-naver-client-secret
+app:
+  task-edit:
+    autosave:
+      idle-seconds: 1
+      max-wait-seconds: 2
+      retry-seconds: 1
