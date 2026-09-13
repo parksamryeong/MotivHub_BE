@@ -16,4 +16,8 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
     List<Task> findByStatusInAndDueDateBefore(List<TaskStatus> statuses, LocalDate date);
 
     List<Task> findByStatusInAndDueDate(List<TaskStatus> statuses, LocalDate dueDate);
+
+    @Query("SELECT new com.motivhub.be.task.repository.TaskStatusCount(t.workspace.id, t.status, COUNT(t)) "
+            + "FROM Task t WHERE t.workspace.id IN :workspaceIds GROUP BY t.workspace.id, t.status")
+    List<TaskStatusCount> countByWorkspaceIdsGroupByStatus(@Param("workspaceIds") List<Long> workspaceIds);
 }

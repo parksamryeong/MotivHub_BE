@@ -14,9 +14,15 @@ import com.motivhub.be.workspace.exception.WorkspaceLeaveRequiresTransferExcepti
 import com.motivhub.be.workspace.exception.WorkspaceMemberNotFoundException;
 import com.motivhub.be.workspace.exception.WorkspaceNotFoundException;
 import com.motivhub.be.workspace.event.WorkspaceMemberRemovedEvent;
+import com.motivhub.be.workspace.dto.WorkspaceTaskCounts;
 import com.motivhub.be.workspace.repository.WorkspaceMemberRepository;
 import com.motivhub.be.workspace.repository.WorkspaceRepository;
+import com.motivhub.be.task.domain.TaskStatus;
+import com.motivhub.be.task.repository.TaskRepository;
+import com.motivhub.be.task.repository.TaskStatusCount;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,15 +34,18 @@ public class WorkspaceService {
     private final WorkspaceRepository workspaceRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final UserRepository userRepository;
+    private final TaskRepository taskRepository;
     private final ApplicationEventPublisher eventPublisher;
 
     public WorkspaceService(WorkspaceRepository workspaceRepository,
                              WorkspaceMemberRepository workspaceMemberRepository,
                              UserRepository userRepository,
+                             TaskRepository taskRepository,
                              ApplicationEventPublisher eventPublisher) {
         this.workspaceRepository = workspaceRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.userRepository = userRepository;
+        this.taskRepository = taskRepository;
         this.eventPublisher = eventPublisher;
     }
 
@@ -50,9 +59,38 @@ public class WorkspaceService {
     }
 
     public List<WorkspaceResponse> listMine(Long userId) {
-        return workspaceMemberRepository.findByUserIdFetchWorkspace(userId).stream()
-                .map(member -> WorkspaceResponse.of(member.getWorkspace(), member.getRole()))
+        List<WorkspaceMember> members = workspaceMemberRepository.findByUserIdFetchWorkspace(userId);
+        List<Long> workspaceIds = members.stream().map(member -> member.getWorkspace().getId()).toList();
+        Map<Long, WorkspaceTaskCounts> countsByWorkspaceId = taskCountsByWorkspaceId(workspaceIds);
+        return members.stream()
+                .map(member -> WorkspaceResponse.of(member.getWorkspace(), member.getRole(),
+                        countsByWorkspaceId.getOrDefault(member.getWorkspace().getId(), WorkspaceTaskCounts.empty())))
                 .toList();
+    }
+
+    // 워크스페이스마다 개별 쿼리를 날리지 않고, 한 번의 집계 쿼리로 전부 가져온 뒤 메모리에서 조합한다(N+1 방지).
+    private Map<Long, WorkspaceTaskCounts> taskCountsByWorkspaceId(List<Long> workspaceIds) {
+        if (workspaceIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, long[]> countsByStatusIndex = new HashMap<>();
+        for (TaskStatusCount row : taskRepository.countByWorkspaceIdsGroupByStatus(workspaceIds)) {
+            long[] counts = countsByStatusIndex.computeIfAbsent(row.workspaceId(), id -> new long[4]);
+            counts[statusIndex(row.status())] = row.count();
+        }
+        Map<Long, WorkspaceTaskCounts> result = new HashMap<>();
+        countsByStatusIndex.forEach((workspaceId, counts) ->
+                result.put(workspaceId, new WorkspaceTaskCounts(counts[0], counts[1], counts[2], counts[3])));
+        return result;
+    }
+
+    private int statusIndex(TaskStatus status) {
+        return switch (status) {
+            case WAITING -> 0;
+            case IN_PROGRESS -> 1;
+            case DONE -> 2;
+            case EXPIRED -> 3;
+        };
     }
 
     public WorkspaceDetailResponse getDetail(Long userId, Long workspaceId) {

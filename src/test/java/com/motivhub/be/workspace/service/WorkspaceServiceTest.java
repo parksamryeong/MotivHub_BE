@@ -13,12 +13,18 @@ import com.motivhub.be.workspace.domain.WorkspaceMember;
 import com.motivhub.be.workspace.domain.WorkspaceRole;
 import com.motivhub.be.workspace.dto.WorkspaceDetailResponse;
 import com.motivhub.be.workspace.dto.WorkspaceResponse;
+import com.motivhub.be.workspace.dto.WorkspaceTaskCounts;
 import com.motivhub.be.workspace.exception.NotWorkspaceMemberException;
 import com.motivhub.be.workspace.exception.NotWorkspaceOwnerException;
 import com.motivhub.be.workspace.exception.WorkspaceLeaveRequiresTransferException;
 import com.motivhub.be.workspace.exception.WorkspaceMemberNotFoundException;
 import com.motivhub.be.workspace.exception.WorkspaceNotFoundException;
 import com.motivhub.be.workspace.repository.WorkspaceMemberRepository;
+import com.motivhub.be.task.domain.TaskStatus;
+import com.motivhub.be.task.dto.TaskCreateRequest;
+import com.motivhub.be.task.dto.TaskResponse;
+import com.motivhub.be.task.service.TaskService;
+import java.time.LocalDate;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,6 +34,7 @@ class WorkspaceServiceTest extends AbstractIntegrationTest {
     @Autowired private WorkspaceService workspaceService;
     @Autowired private UserRepository userRepository;
     @Autowired private WorkspaceMemberRepository workspaceMemberRepository;
+    @Autowired private TaskService taskService;
 
     private User newUser(String suffix) {
         return userRepository.save(User.create(
@@ -59,6 +66,60 @@ class WorkspaceServiceTest extends AbstractIntegrationTest {
         List<WorkspaceResponse> mine = workspaceService.listMine(creator.getId());
 
         assertThat(mine).extracting(WorkspaceResponse::name).containsExactly("팀 프로젝트");
+    }
+
+    @Test
+    void listMineReturnsZeroTaskCountsForWorkspaceWithNoTasks() {
+        User owner = newUser("taskcounts-empty-owner");
+        workspaceService.create(owner.getId(), "빈 워크스페이스");
+
+        List<WorkspaceResponse> mine = workspaceService.listMine(owner.getId());
+
+        assertThat(mine).hasSize(1);
+        assertThat(mine.get(0).taskCounts()).isEqualTo(new WorkspaceTaskCounts(0, 0, 0, 0));
+    }
+
+    @Test
+    void listMineIncludesTaskCountsGroupedByStatus() {
+        User owner = newUser("taskcounts-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "태스크 개수 워크스페이스");
+        TaskResponse waiting = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("대기 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+        TaskResponse inProgress = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("진행중 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+        TaskResponse done = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("완료 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+        taskService.changeStatus(owner.getId(), inProgress.id(), TaskStatus.IN_PROGRESS);
+        taskService.changeStatus(owner.getId(), done.id(), TaskStatus.DONE);
+
+        List<WorkspaceResponse> mine = workspaceService.listMine(owner.getId());
+
+        WorkspaceTaskCounts counts = mine.stream()
+                .filter(w -> w.id().equals(workspace.id()))
+                .findFirst().orElseThrow().taskCounts();
+        assertThat(counts).isEqualTo(new WorkspaceTaskCounts(1, 1, 1, 0));
+    }
+
+    @Test
+    void listMineDoesNotMixTaskCountsAcrossWorkspaces() {
+        User owner = newUser("taskcounts-mix-owner");
+        WorkspaceResponse workspaceA = workspaceService.create(owner.getId(), "워크스페이스 A");
+        WorkspaceResponse workspaceB = workspaceService.create(owner.getId(), "워크스페이스 B");
+        taskService.create(owner.getId(), workspaceA.id(),
+                new TaskCreateRequest("A 태스크1", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+        taskService.create(owner.getId(), workspaceA.id(),
+                new TaskCreateRequest("A 태스크2", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+        taskService.create(owner.getId(), workspaceB.id(),
+                new TaskCreateRequest("B 태스크1", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        List<WorkspaceResponse> mine = workspaceService.listMine(owner.getId());
+
+        WorkspaceTaskCounts countsA = mine.stream()
+                .filter(w -> w.id().equals(workspaceA.id())).findFirst().orElseThrow().taskCounts();
+        WorkspaceTaskCounts countsB = mine.stream()
+                .filter(w -> w.id().equals(workspaceB.id())).findFirst().orElseThrow().taskCounts();
+        assertThat(countsA.waiting()).isEqualTo(2);
+        assertThat(countsB.waiting()).isEqualTo(1);
     }
 
     @Test
