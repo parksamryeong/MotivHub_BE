@@ -26,6 +26,12 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      # 이 레포가 Windows에서 커밋돼서 gradlew에 실행 권한(+x)이 안 붙어있음 - Linux 러너에서
+      # 그대로 실행하면 Permission denied로 즉시 실패한다. git 인덱스를 고치는 대신 매번 여기서
+      # 명시적으로 부여 - 어떤 OS에서 커밋하든 항상 안전하게 동작한다.
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
       - name: Run tests
         run: ./gradlew test --no-daemon
 
