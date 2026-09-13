@@ -1,7 +1,11 @@
 package com.motivhub.be.realtime.service;
 
 import com.motivhub.be.realtime.config.RealtimeDestinations;
+import com.motivhub.be.task.domain.Task;
+import com.motivhub.be.task.repository.TaskRepository;
 import com.motivhub.be.workspace.event.WorkspaceMemberRemovedEvent;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -26,11 +30,17 @@ public class WorkspaceMemberRemovedSessionCleaner {
 
     private final SimpUserRegistry simpUserRegistry;
     private final MessageChannel clientInboundChannel;
+    private final TaskRepository taskRepository;
+    private final TaskEditChannelRegistry editChannelRegistry;
 
     public WorkspaceMemberRemovedSessionCleaner(SimpUserRegistry simpUserRegistry,
-                                                 @Qualifier("clientInboundChannel") MessageChannel clientInboundChannel) {
+                                                 @Qualifier("clientInboundChannel") MessageChannel clientInboundChannel,
+                                                 TaskRepository taskRepository,
+                                                 TaskEditChannelRegistry editChannelRegistry) {
         this.simpUserRegistry = simpUserRegistry;
         this.clientInboundChannel = clientInboundChannel;
+        this.taskRepository = taskRepository;
+        this.editChannelRegistry = editChannelRegistry;
     }
 
     // 참고: 여기서 조회하는 SimpUserRegistry는 이 클래스가 보내는 합성 UNSUBSCRIBE 메시지를 인지하지
@@ -47,27 +57,38 @@ public class WorkspaceMemberRemovedSessionCleaner {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onMemberRemoved(WorkspaceMemberRemovedEvent event) {
         try {
-            String destination = RealtimeDestinations.workspaceBoard(event.workspaceId());
+            String boardDestination = RealtimeDestinations.workspaceBoard(event.workspaceId());
+            Set<String> targetDestinations = revocableDestinations(event.workspaceId(), boardDestination);
             SimpUser user = simpUserRegistry.getUser(String.valueOf(event.userId()));
             if (user == null) {
                 return;
             }
             for (SimpSession session : user.getSessions()) {
                 for (SimpSubscription subscription : session.getSubscriptions()) {
-                    if (!destination.equals(subscription.getDestination())) {
+                    String destination = subscription.getDestination();
+                    if (!targetDestinations.contains(destination)) {
                         continue;
                     }
                     // 구독마다 개별 처리 - 한 세션(탭/기기)에서 실패해도 나머지 세션의 구독 해제는
                     // 계속 시도해야 한다.
                     try {
                         unsubscribe(session.getId(), subscription.getId());
+                        // 편집 토픽은 구독 해제만으로는 부족하다 - 그 구독이 곧 SEND 인가 근거이므로
+                        // 인메모리 레지스트리에서도 회수해야 제외된 멤버가 계속 편집을 릴레이·버퍼링하는
+                        // 것(남아있는 정상 편집자가 그 내용을 모르고 저장하게 되는 것)을 막을 수 있다.
+                        // STOMP 하트비트 때문에 소켓은 무한히 살아있을 수 있어서 DISCONNECT만 믿을 수 없다.
+                        if (!boardDestination.equals(destination)) {
+                            editChannelRegistry.revoke(session.getId(), destination);
+                        }
                         log.info(
-                                "제외된 멤버의 보드 구독 강제 해제 - workspaceId={}, userId={}, sessionId={}, subscriptionId={}",
-                                event.workspaceId(), event.userId(), session.getId(), subscription.getId());
+                                "제외된 멤버의 구독 강제 해제 - workspaceId={}, userId={}, sessionId={}, subscriptionId={}, destination={}",
+                                event.workspaceId(), event.userId(), session.getId(), subscription.getId(),
+                                destination);
                     } catch (Exception e) {
                         log.error(
-                                "제외된 멤버의 보드 구독 해제 실패 - workspaceId={}, userId={}, sessionId={}, subscriptionId={}",
-                                event.workspaceId(), event.userId(), session.getId(), subscription.getId(), e);
+                                "제외된 멤버의 구독 해제 실패 - workspaceId={}, userId={}, sessionId={}, subscriptionId={}, destination={}",
+                                event.workspaceId(), event.userId(), session.getId(), subscription.getId(),
+                                destination, e);
                     }
                 }
             }
@@ -75,6 +96,19 @@ public class WorkspaceMemberRemovedSessionCleaner {
             log.error("제외된 멤버의 보드 구독 정리 처리 실패 - workspaceId={}, userId={}",
                     event.workspaceId(), event.userId(), e);
         }
+    }
+
+    // 제외된 멤버에게서 회수해야 하는 목적지 전체 - 워크스페이스 보드 + 그 워크스페이스에 속한 모든
+    // 태스크의 두 편집 브로드캐스트 토픽. 편집 토픽은 태스크 단위라 워크스페이스 하나에 목적지가
+    // (태스크 수 × 2)개 생기므로, 구독 하나마다 문자열 비교를 반복하지 않도록 Set으로 만들어 둔다.
+    private Set<String> revocableDestinations(Long workspaceId, String boardDestination) {
+        Set<String> destinations = new LinkedHashSet<>();
+        destinations.add(boardDestination);
+        for (Task task : taskRepository.findByWorkspaceId(workspaceId)) {
+            destinations.add(RealtimeDestinations.taskEditBroadcast(task.getId(), TaskEditableField.DESCRIPTION));
+            destinations.add(RealtimeDestinations.taskEditBroadcast(task.getId(), TaskEditableField.NOTE));
+        }
+        return destinations;
     }
 
     private void unsubscribe(String sessionId, String subscriptionId) {

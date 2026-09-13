@@ -5,9 +5,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.motivhub.be.auth.jwt.JwtProvider;
+import com.motivhub.be.realtime.config.RealtimeDestinations;
 import com.motivhub.be.realtime.dto.TaskBoardChangeMessage;
+import com.motivhub.be.realtime.dto.TaskEditUpdateMessage;
 import com.motivhub.be.support.AbstractIntegrationTest;
 import com.motivhub.be.task.dto.TaskCreateRequest;
+import com.motivhub.be.task.dto.TaskResponse;
 import com.motivhub.be.task.service.TaskService;
 import com.motivhub.be.user.domain.User;
 import com.motivhub.be.workspace.domain.Workspace;
@@ -27,6 +30,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.messaging.converter.MappingJackson2MessageConverter;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.stomp.StompFrameHandler;
 import org.springframework.messaging.simp.stomp.StompHeaders;
 import org.springframework.messaging.simp.stomp.StompSession;
@@ -48,6 +52,7 @@ class WorkspaceMemberRemovedSessionCleanerTest extends AbstractIntegrationTest {
     @Autowired private WorkspaceService workspaceService;
     @Autowired private WorkspaceMemberRepository workspaceMemberRepository;
     @Autowired private JwtProvider jwtProvider;
+    @Autowired private SimpMessagingTemplate messagingTemplate;
 
     // createUniqueUser(AbstractIntegrationTest)를 재사용해서 이메일/닉네임 충돌을 원천 차단하고,
     // 여기서는 STOMP 브로커가 다른 스레드에서 이 유저를 즉시 조회할 수 있도록 커밋만 추가로 처리한다.
@@ -99,6 +104,83 @@ class WorkspaceMemberRemovedSessionCleanerTest extends AbstractIntegrationTest {
             }
         });
         return messages;
+    }
+
+    private BlockingQueue<TaskEditUpdateMessage> subscribeToDescriptionEdits(StompSession session, Long taskId) {
+        BlockingQueue<TaskEditUpdateMessage> messages = new LinkedBlockingQueue<>();
+        session.subscribe(
+                RealtimeDestinations.taskEditBroadcast(taskId, TaskEditableField.DESCRIPTION),
+                new StompFrameHandler() {
+                    @Override
+                    public Type getPayloadType(StompHeaders headers) {
+                        return TaskEditUpdateMessage.class;
+                    }
+
+                    @Override
+                    public void handleFrame(StompHeaders headers, Object payload) {
+                        messages.add((TaskEditUpdateMessage) payload);
+                    }
+                });
+        return messages;
+    }
+
+    // 편집 토픽은 보드 토픽과 달리 태스크 단위라, 추방 시 정리 대상 목적지를 워크스페이스의 모든
+    // 태스크로부터 계산해야 한다(Fix 4). 추방된 멤버의 소켓은 STOMP 하트비트로 무한히 살아있을 수
+    // 있으므로 DISCONNECT만 믿으면 계속 타이핑을 릴레이받고 릴레이할 수 있다.
+    @Test
+    void kickedMemberStopsReceivingTaskDescriptionEditBroadcastsWhileOtherAssigneeStillDoes() throws Exception {
+        User owner = newUser("edit-kick-owner");
+        User kicked = newUser("edit-kick-kicked");
+        User staying = newUser("edit-kick-staying");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "편집 토픽 추방 워크스페이스");
+        joinAsMember(workspace.id(), kicked);
+        joinAsMember(workspace.id(), staying);
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("편집 토픽 추방 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+        // description 편집 토픽 구독은 TaskAccessPolicy.requireEditPermission(OWNER 또는 담당자)을
+        // 요구하므로, 두 멤버 모두 담당자로 등록해야 애초에 구독이 가능하다.
+        taskService.addAssignee(owner.getId(), task.id(), kicked.getId());
+        taskService.addAssignee(owner.getId(), task.id(), staying.getId());
+        TestTransaction.flagForCommit();
+        TestTransaction.end();
+        TestTransaction.start();
+
+        StompSession kickedSession = connectAsUser(kicked);
+        BlockingQueue<TaskEditUpdateMessage> kickedEdits = subscribeToDescriptionEdits(kickedSession, task.id());
+        StompSession stayingSession = connectAsUser(staying);
+        BlockingQueue<TaskEditUpdateMessage> stayingEdits = subscribeToDescriptionEdits(stayingSession, task.id());
+        Thread.sleep(300); // 브로커의 구독 등록이 끝날 시간 확보(아래 브로드캐스트가 이를 앞지르지 않도록)
+
+        String editDestination = RealtimeDestinations.taskEditBroadcast(task.id(), TaskEditableField.DESCRIPTION);
+
+        // 추방 전: 두 구독 모두 실제로 살아있음을 먼저 증명한다 - 그래야 "추방 후 못 받는다"가
+        // 구독 미등록 때문에 우연히 통과하는 게 아니라는 것이 보장된다.
+        messagingTemplate.convertAndSend(editDestination, new TaskEditUpdateMessage("before-kick"));
+        assertThat(stayingEdits.poll(5, TimeUnit.SECONDS)).isNotNull();
+        assertThat(kickedEdits.poll(5, TimeUnit.SECONDS)).isNotNull();
+
+        TestTransaction.flagForCommit();
+        workspaceService.kick(owner.getId(), workspace.id(), kicked.getId());
+        TestTransaction.end();
+        TestTransaction.start();
+        Thread.sleep(500); // 구독 해제 메시지가 브로커에 실제로 반영될 시간 확보
+
+        messagingTemplate.convertAndSend(editDestination, new TaskEditUpdateMessage("after-kick"));
+
+        assertThat(stayingEdits.poll(5, TimeUnit.SECONDS)).isNotNull();
+        assertThat(kickedEdits.poll(2, TimeUnit.SECONDS)).isNull();
+
+        // 구독 해제와 함께 SEND 인가(TaskEditChannelRegistry)도 회수돼야 한다 - 회수되지 않으면
+        // 추방된 멤버가 계속 편집을 릴레이할 수 있고, 남아있는 정상 편집자가 그 내용을 모르고 저장한다.
+        kickedSession.send("/app/tasks/" + task.id() + "/description/edits",
+                new TaskEditUpdateMessage("relay-after-kick"));
+        assertThat(stayingEdits.poll(2, TimeUnit.SECONDS)).isNull();
+
+        // 인가가 회수된 뒤의 SEND는 인터셉터가 거부하고, 거부된 SEND는 STOMP 커넥션 전체를 닫는다
+        // (이 기능 한정이 아닌 기존 STOMP 전반의 동작). 따라서 이 시점에 kickedSession은 이미 닫혀
+        // 있는 것이 정상이고, 그대로 disconnect()를 호출하면 IllegalStateException이 난다.
+        assertThat(kickedSession.isConnected()).isFalse();
+        stayingSession.disconnect();
     }
 
     @Test

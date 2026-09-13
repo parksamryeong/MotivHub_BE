@@ -48,10 +48,15 @@ public class TaskEditAutosaveScheduler {
                 }
                 Long taskId = Long.valueOf(matcher.group(1));
                 TaskEditableField field = TaskEditableField.fromPathSegment(matcher.group(2));
-                bufferService.metadata(taskId, field).ifPresent(metadata -> {
+                bufferService.metadata(taskId, field).ifPresentOrElse(metadata -> {
                     if (isDue(metadata)) {
                         requestSave(taskId, field);
                     }
+                }, () -> {
+                    // 활성 키에는 있는데 메타데이터가 없다 = 버퍼가 TTL로 소멸했는데 활성 키 엔트리만
+                    // 남은 유령 키다. 매 폴링마다 다시 검사되지 않도록 여기서 정리한다.
+                    log.debug("만료된 활성 버퍼 키 정리 - taskId={}, field={}", taskId, field.pathSegment());
+                    bufferService.removeFromActiveKeys(taskId, field);
                 });
             }
         } catch (Exception e) {

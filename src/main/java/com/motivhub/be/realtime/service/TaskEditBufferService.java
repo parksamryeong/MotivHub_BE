@@ -56,6 +56,15 @@ public class TaskEditBufferService {
     public void clear(Long taskId, TaskEditableField field) {
         redisTemplate.delete(bufferKey(taskId, field));
         redisTemplate.delete(metaKey(taskId, field));
+        removeFromActiveKeys(taskId, field);
+    }
+
+    /**
+     * 활성 키 목록에서만 제거한다(버퍼/메타 데이터는 건드리지 않음). 버퍼가 TTL로 소멸했는데 활성
+     * 키 엔트리만 남은 "유령 키"를 폴러가 발견했을 때 정리하는 용도 - 활성 키 집합에는 TTL을 걸 수
+     * 없으므로(집합 전체가 한 키라서 살아있는 다른 버퍼까지 같이 죽는다) 이렇게 발견 시점에 지운다.
+     */
+    public void removeFromActiveKeys(Long taskId, TaskEditableField field) {
         redisTemplate.opsForSet().remove(ACTIVE_KEYS, activeKeyId(taskId, field));
     }
 
@@ -65,8 +74,13 @@ public class TaskEditBufferService {
     }
 
     public void markRequested(Long taskId, TaskEditableField field) {
-        hashOperations.put(metaKey(taskId, field), FIELD_LAST_REQUESTED_AT,
-                String.valueOf(Instant.now().toEpochMilli()));
+        String metaKey = metaKey(taskId, field);
+        hashOperations.put(metaKey, FIELD_LAST_REQUESTED_AT, String.valueOf(Instant.now().toEpochMilli()));
+        // TTL은 여기서 갱신하지 않는다 - appendUpdate가 bufferKey/metaKey 둘 다 같은 시점에 TTL을
+        // 걸어두므로 메타 키만 따로 만료될 일은 없다. 여기서 metaKey의 TTL만 갱신하면 폴러가
+        // retry-seconds마다 이 메서드를 호출할 때마다 metaKey가 계속 연장되면서, bufferKey는 원래
+        // TTL대로 만료되는데 metadata()는 계속 값을 반환해 저장 요청이 무한히 재발송되는 회귀가
+        // 생긴다(최종 리뷰 재검토에서 발견, 되돌림).
     }
 
     public Optional<BufferMetadata> metadata(Long taskId, TaskEditableField field) {

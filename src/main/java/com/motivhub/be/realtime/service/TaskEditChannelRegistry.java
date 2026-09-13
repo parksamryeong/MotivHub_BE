@@ -23,6 +23,15 @@ public class TaskEditChannelRegistry {
         return authorizedSessionTopics.contains(key(sessionId, topic));
     }
 
+    /**
+     * 특정 세션의 특정 편집 토픽 SEND 인가만 회수한다. 워크스페이스에서 제외된 멤버의 편집 토픽
+     * 구독을 강제 해제할 때(WorkspaceMemberRemovedSessionCleaner) 같이 호출해서, 커넥션이 살아 있는
+     * 동안 계속 편집을 릴레이·버퍼링하는 것을 막는다.
+     */
+    public void revoke(String sessionId, String topic) {
+        authorizedSessionTopics.remove(key(sessionId, topic));
+    }
+
     @EventListener
     public void handleDisconnect(SessionDisconnectEvent event) {
         String prefix = event.getSessionId() + "::";

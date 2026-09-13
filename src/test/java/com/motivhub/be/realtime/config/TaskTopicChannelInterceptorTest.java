@@ -6,7 +6,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.motivhub.be.auth.jwt.JwtProvider;
 import com.motivhub.be.realtime.exception.StompAuthenticationException;
-import com.motivhub.be.realtime.service.TaskEditableField;
 import com.motivhub.be.support.AbstractIntegrationTest;
 import com.motivhub.be.task.dto.TaskCreateRequest;
 import com.motivhub.be.task.dto.TaskResponse;
@@ -292,6 +291,21 @@ class TaskTopicChannelInterceptorTest extends AbstractIntegrationTest {
                 "/topic/tasks/" + task.id() + "/note/save-request", owner.getId());
 
         assertThatCode(() -> interceptor.preSend(message, null)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void nonMemberCannotSubscribeToTaskEditSaveRequestTopic() {
+        User owner = newUser("save-req-sub-owner2");
+        User outsider = newUser("save-req-sub-outsider");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "저장요청 구독 권한 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("저장요청 구독 권한 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        Message<byte[]> message = subscribeMessage(
+                "/topic/tasks/" + task.id() + "/note/save-request", outsider.getId());
+
+        assertThatThrownBy(() -> interceptor.preSend(message, null))
+                .isInstanceOf(NotWorkspaceMemberException.class);
     }
 
     @Test

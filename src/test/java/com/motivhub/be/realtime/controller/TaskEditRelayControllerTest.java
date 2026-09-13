@@ -117,6 +117,11 @@ class TaskEditRelayControllerTest extends AbstractIntegrationTest {
 
         StompSession receiverSession = connectAsUser(owner);
         BlockingQueue<TaskEditUpdateMessage> received = subscribeToEdits(receiverSession, task.id(), "description");
+        // 브로커의 구독 등재가 끝날 시간 확보 - 등재 전에 브로드캐스트가 도착하면 브로커가 에러 없이
+        // 조용히 버린다. 예전에는 릴레이가 Redis 버퍼 적재를 먼저 거치면서 그 왕복 지연이 우연히
+        // 이 대기를 대신해줬는데, 지금은 브로드캐스트가 가장 먼저 나가므로(Redis 장애가 릴레이를
+        // 막지 않도록 한 의도된 순서) 테스트가 직접 대기해야 한다.
+        Thread.sleep(300);
 
         senderSession.send("/app/tasks/" + task.id() + "/description/edits",
                 new TaskEditUpdateMessage("base64-update-1"));
@@ -171,6 +176,72 @@ class TaskEditRelayControllerTest extends AbstractIntegrationTest {
 
         assertThat(taskService.getTask(task.id()).getDescription()).isEqualTo("실시간으로 합쳐진 최종 설명");
         assertThat(bufferService.isEmpty(task.id(), TaskEditableField.DESCRIPTION)).isTrue();
+
+        session.disconnect();
+    }
+
+    // 길이 제한 초과는 재시도해도 절대 성공할 수 없는 실패다(내용이 짧아질 리 없다) - 그래서 저장은
+    // 건너뛰면서도 버퍼는 비워서, 자동저장 폴러가 retry-seconds마다 영원히 저장 요청을 재브로드캐스트
+    // 하고 TTL 1시간 내내 죽은 엔트리를 들고 있는 상황을 막는다.
+    @Test
+    void snapshotExceedingDescriptionLengthLimitIsRejectedAndBufferIsCleared() throws Exception {
+        User owner = newUser("snapshot-toolong-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "길이초과 스냅샷 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("길이초과 스냅샷 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+        TestTransaction.flagForCommit();
+        TestTransaction.end();
+        TestTransaction.start();
+
+        StompSession session = connectAsUser(owner);
+        subscribeToEdits(session, task.id(), "description");
+        session.send("/app/tasks/" + task.id() + "/description/edits", new TaskEditUpdateMessage("u1"));
+        Thread.sleep(300);
+
+        session.send("/app/tasks/" + task.id() + "/description/snapshot",
+                new TaskEditSnapshotMessage("가".repeat(2001)));
+        Thread.sleep(500);
+
+        assertThat(taskService.getTask(task.id()).getDescription()).isNull();
+        assertThat(bufferService.isEmpty(task.id(), TaskEditableField.DESCRIPTION)).isTrue();
+
+        session.disconnect();
+    }
+
+    // 저장 요청이 나간 뒤 도착한 타이핑 업데이트는 방금 영속화한 스냅샷에 반영되지 않았다 - 이때
+    // 버퍼를 비우면 그 업데이트가 유실되므로, 다음 자동저장 주기가 최신 내용을 다시 저장할 수 있도록
+    // 버퍼를 남겨둬야 한다.
+    @Test
+    void snapshotDoesNotClearBufferWhenNewerUpdateArrivedAfterSaveRequest() throws Exception {
+        User owner = newUser("snapshot-stale-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "뒤늦은 업데이트 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("뒤늦은 업데이트 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+        TestTransaction.flagForCommit();
+        TestTransaction.end();
+        TestTransaction.start();
+
+        StompSession session = connectAsUser(owner);
+        subscribeToEdits(session, task.id(), "note");
+        session.send("/app/tasks/" + task.id() + "/note/edits", new TaskEditUpdateMessage("u1"));
+        Thread.sleep(300);
+
+        // 폴러를 기다리지 않고 "저장 요청이 이미 나간 상태"를 직접 만든 뒤, 그 이후에 새 업데이트가
+        // 도착하는 순서를 재현한다(테스트 프로파일의 idle-seconds=1보다 훨씬 짧게 끝내야 폴러가
+        // 중간에 끼어들어 lastRequestedAt을 다시 갱신하지 않는다).
+        bufferService.markRequested(task.id(), TaskEditableField.NOTE);
+        Thread.sleep(50);
+        session.send("/app/tasks/" + task.id() + "/note/edits", new TaskEditUpdateMessage("u2"));
+        Thread.sleep(300);
+
+        session.send("/app/tasks/" + task.id() + "/note/snapshot",
+                new TaskEditSnapshotMessage("저장 요청 시점의 노트"));
+        Thread.sleep(500);
+
+        // 저장 자체는 정상적으로 됐지만, 버퍼는 남아있어야 한다.
+        assertThat(taskNoteService.get(owner.getId(), task.id()).content()).isEqualTo("저장 요청 시점의 노트");
+        assertThat(bufferService.isEmpty(task.id(), TaskEditableField.NOTE)).isFalse();
+        assertThat(bufferService.listUpdates(task.id(), TaskEditableField.NOTE)).contains("u2");
 
         session.disconnect();
     }
