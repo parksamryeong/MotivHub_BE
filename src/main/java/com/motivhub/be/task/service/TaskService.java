@@ -29,6 +29,7 @@ import com.motivhub.be.workspace.domain.WorkspaceMember;
 import com.motivhub.be.workspace.exception.NotWorkspaceOwnerException;
 import com.motivhub.be.workspace.service.WorkspaceService;
 import java.time.LocalDate;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -118,6 +119,19 @@ public class TaskService {
     public Task getTask(Long taskId) {
         return taskRepository.findById(taskId)
                 .orElseThrow(() -> new TaskNotFoundException("태스크를 찾을 수 없습니다."));
+    }
+
+    public String getDescriptionYjsStateBase64(Long userId, Long taskId) {
+        Task task = getTask(taskId);
+        taskAccessPolicy.requireEditPermission(task, userId);
+        byte[] state = task.getDescriptionYjsState();
+        return state == null ? null : Base64.getEncoder().encodeToString(state);
+    }
+
+    @Transactional
+    public void updateDescriptionYjsState(Long taskId, byte[] state) {
+        Task task = getTask(taskId);
+        task.updateYjsDescriptionState(state);
     }
 
     public TaskResponse getResponseForBoardBroadcast(Long taskId) {

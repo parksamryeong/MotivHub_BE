@@ -32,6 +32,9 @@ public class TaskNote {
     @Column(columnDefinition = "LONGTEXT")
     private String content;
 
+    @Column(name = "content_yjs_state", columnDefinition = "LONGBLOB")
+    private byte[] contentYjsState;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "updated_by", nullable = false)
     private User updatedBy;
@@ -54,5 +57,9 @@ public class TaskNote {
         this.content = content;
         this.updatedBy = updatedBy;
         this.updatedAt = LocalDateTime.now();
+    }
+
+    public void updateYjsState(byte[] state) {
+        this.contentYjsState = state;
     }
 }

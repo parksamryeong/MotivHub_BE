@@ -537,4 +537,43 @@ class TaskServiceTest extends AbstractIntegrationTest {
 
         assertThat(notificationService.list(assignee.getId(), PageRequest.of(0, 20)).getContent()).hasSize(1);
     }
+
+    @Test
+    void descriptionYjsStateIsNullByDefault() {
+        User owner = createUniqueUser("yjs-state-default");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "yjs 기본값 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("yjs 기본값 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        assertThat(taskService.getDescriptionYjsStateBase64(owner.getId(), task.id())).isNull();
+    }
+
+    @Test
+    void updateDescriptionYjsStateThenGetReturnsBase64EncodedValue() {
+        User owner = createUniqueUser("yjs-state-roundtrip");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "yjs 저장 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("yjs 저장 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+        byte[] state = new byte[] {1, 2, 3, 4};
+
+        taskService.updateDescriptionYjsState(task.id(), state);
+
+        String base64 = taskService.getDescriptionYjsStateBase64(owner.getId(), task.id());
+        assertThat(base64).isEqualTo(java.util.Base64.getEncoder().encodeToString(state));
+    }
+
+    @Test
+    void nonEditorCannotGetDescriptionYjsState() {
+        User owner = createUniqueUser("yjs-state-perm-owner");
+        User plainMember = createUniqueUser("yjs-state-perm-member");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "yjs 권한 워크스페이스");
+        workspaceMemberRepository.save(com.motivhub.be.workspace.domain.WorkspaceMember.create(
+                workspaceService.getWorkspace(workspace.id()), plainMember,
+                com.motivhub.be.workspace.domain.WorkspaceRole.MEMBER));
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("yjs 권한 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        assertThatThrownBy(() -> taskService.getDescriptionYjsStateBase64(plainMember.getId(), task.id()))
+                .isInstanceOf(com.motivhub.be.task.exception.TaskEditForbiddenException.class);
+    }
 }

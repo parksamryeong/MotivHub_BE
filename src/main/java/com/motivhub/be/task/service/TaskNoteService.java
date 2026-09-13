@@ -8,6 +8,7 @@ import com.motivhub.be.user.domain.User;
 import com.motivhub.be.user.exception.UserNotFoundException;
 import com.motivhub.be.user.repository.UserRepository;
 import com.motivhub.be.workspace.service.WorkspaceService;
+import java.util.Base64;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,6 +35,22 @@ public class TaskNoteService {
         return taskNoteRepository.findByTaskId(taskId)
                 .map(TaskNoteResponse::from)
                 .orElseGet(() -> TaskNoteResponse.empty(taskId));
+    }
+
+    public String getYjsStateBase64(Long userId, Long taskId) {
+        Task task = taskService.getTask(taskId);
+        workspaceService.getMembership(task.getWorkspace().getId(), userId);
+        return taskNoteRepository.findByTaskId(taskId)
+                .map(TaskNote::getContentYjsState)
+                .filter(state -> state != null)
+                .map(state -> Base64.getEncoder().encodeToString(state))
+                .orElse(null);
+    }
+
+    @Transactional
+    public void updateYjsState(Long taskId, byte[] state) {
+        taskNoteRepository.findByTaskId(taskId)
+                .ifPresent(note -> note.updateYjsState(state));
     }
 
     @Transactional

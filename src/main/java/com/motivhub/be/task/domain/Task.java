@@ -56,6 +56,9 @@ public class Task {
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
+    @Column(name = "description_yjs_state", columnDefinition = "LONGBLOB")
+    private byte[] descriptionYjsState;
+
     private Task(Workspace workspace, String name, String description,
                   LocalDate startDate, LocalDate dueDate, User createdBy) {
         this.workspace = workspace;
@@ -76,6 +79,10 @@ public class Task {
     public void updateContent(String name, String description) {
         this.name = name;
         this.description = description;
+    }
+
+    public void updateYjsDescriptionState(byte[] state) {
+        this.descriptionYjsState = state;
     }
 
     public void updatePeriod(LocalDate startDate, LocalDate dueDate) {

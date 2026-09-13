@@ -1,6 +1,7 @@
 package com.motivhub.be.task.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.motivhub.be.support.AbstractIntegrationTest;
@@ -123,5 +124,42 @@ class TaskNoteServiceTest extends AbstractIntegrationTest {
         taskService.delete(owner.getId(), task.id());
 
         assertThat(taskNoteRepository.findByTaskId(task.id())).isEmpty();
+    }
+
+    @Test
+    void noteYjsStateIsNullByDefault() {
+        User owner = createUniqueUser("note-yjs-default");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "노트 yjs 기본값 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("노트 yjs 기본값 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        assertThat(taskNoteService.getYjsStateBase64(owner.getId(), task.id())).isNull();
+    }
+
+    @Test
+    void updateNoteYjsStateAfterUpsertThenGetReturnsBase64EncodedValue() {
+        User owner = createUniqueUser("note-yjs-roundtrip");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "노트 yjs 저장 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("노트 yjs 저장 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+        taskNoteService.upsert(owner.getId(), task.id(), "노트 내용");
+        byte[] state = new byte[] {5, 6, 7};
+
+        taskNoteService.updateYjsState(task.id(), state);
+
+        String base64 = taskNoteService.getYjsStateBase64(owner.getId(), task.id());
+        assertThat(base64).isEqualTo(java.util.Base64.getEncoder().encodeToString(state));
+    }
+
+    @Test
+    void updateNoteYjsStateWhenNoteRowDoesNotExistYetDoesNothing() {
+        User owner = createUniqueUser("note-yjs-no-row");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "노트 없음 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("노트 없음 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        assertThatCode(() -> taskNoteService.updateYjsState(task.id(), new byte[] {1}))
+                .doesNotThrowAnyException();
+        assertThat(taskNoteService.getYjsStateBase64(owner.getId(), task.id())).isNull();
     }
 }
