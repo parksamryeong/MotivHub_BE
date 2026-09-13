@@ -16,4 +16,12 @@ public interface IssueRepository extends JpaRepository<Issue, Long> {
     @Query("SELECT i FROM Issue i JOIN FETCH i.author JOIN FETCH i.workspace "
             + "WHERE i.id = :id AND i.workspace.deletedAt IS NULL")
     Optional<Issue> findByIdFetchAuthorAndWorkspace(@Param("id") Long id);
+
+    @Query("SELECT i FROM Issue i JOIN FETCH i.author JOIN FETCH i.workspace "
+            + "WHERE i.workspace.deletedAt IS NULL "
+            + "AND (LOWER(i.title) LIKE LOWER(CONCAT('%', :keyword, '%')) "
+            + "OR LOWER(i.problemDescription) LIKE LOWER(CONCAT('%', :keyword, '%')) "
+            + "OR LOWER(i.solution) LIKE LOWER(CONCAT('%', :keyword, '%'))) "
+            + "ORDER BY i.createdAt DESC, i.id DESC")
+    List<Issue> searchByKeyword(@Param("keyword") String keyword);
 }

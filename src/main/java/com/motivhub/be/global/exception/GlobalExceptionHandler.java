@@ -8,6 +8,8 @@ import com.motivhub.be.file.exception.FileTooLargeException;
 import com.motivhub.be.file.exception.FileUploadNotConfirmedException;
 import com.motivhub.be.file.exception.WorkspaceFileForbiddenException;
 import com.motivhub.be.file.exception.WorkspaceFileNotFoundException;
+import com.motivhub.be.issue.exception.IssueCommentForbiddenException;
+import com.motivhub.be.issue.exception.IssueCommentNotFoundException;
 import com.motivhub.be.issue.exception.IssueForbiddenException;
 import com.motivhub.be.issue.exception.IssueNotFoundException;
 import com.motivhub.be.notification.exception.NotificationNotFoundException;
@@ -220,6 +222,18 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleIssueNotFound(IssueNotFoundException e) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(ErrorResponse.of("ISSUE_NOT_FOUND", e.getMessage()));
+    }
+
+    @ExceptionHandler(IssueCommentForbiddenException.class)
+    public ResponseEntity<ErrorResponse> handleIssueCommentForbidden(IssueCommentForbiddenException e) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(ErrorResponse.of("ISSUE_COMMENT_FORBIDDEN", e.getMessage()));
+    }
+
+    @ExceptionHandler(IssueCommentNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleIssueCommentNotFound(IssueCommentNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("ISSUE_COMMENT_NOT_FOUND", e.getMessage()));
     }
 
     @ExceptionHandler(NotificationNotFoundException.class)

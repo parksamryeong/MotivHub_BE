@@ -1,6 +1,8 @@
 package com.motivhub.be.issue.controller;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -8,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.motivhub.be.auth.jwt.JwtProvider;
 import com.motivhub.be.issue.dto.IssueCommentCreateRequest;
+import com.motivhub.be.issue.dto.IssueCommentUpdateRequest;
 import com.motivhub.be.issue.dto.IssueCreateRequest;
 import com.motivhub.be.support.AbstractIntegrationTest;
 import com.motivhub.be.user.domain.SocialProvider;
@@ -87,5 +90,85 @@ class IssueCommentControllerTest extends AbstractIntegrationTest {
                         .header("Authorization", "Bearer " + tokenFor(user)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("ISSUE_NOT_FOUND"));
+    }
+
+    @Test
+    void authorCanUpdateOwnCommentViaApi() throws Exception {
+        User author = newUser("ic4-author");
+        WorkspaceResponse workspace = workspaceService.create(author.getId(), "이슈 댓글 API 수정 워크스페이스");
+        Long issueId = createIssue(author, workspace.id());
+        Long commentId = createComment(author, issueId, "원래 내용");
+
+        mockMvc.perform(patch("/api/issues/{issueId}/comments/{commentId}", issueId, commentId)
+                        .header("Authorization", "Bearer " + tokenFor(author))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new IssueCommentUpdateRequest("고친 내용"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").value("고친 내용"));
+    }
+
+    @Test
+    void nonAuthorCannotUpdateCommentViaApi() throws Exception {
+        User author = newUser("ic5-author");
+        User outsider = newUser("ic5-outsider");
+        WorkspaceResponse workspace = workspaceService.create(author.getId(), "이슈 댓글 API 수정권한 워크스페이스");
+        Long issueId = createIssue(author, workspace.id());
+        Long commentId = createComment(author, issueId, "원래 내용");
+
+        mockMvc.perform(patch("/api/issues/{issueId}/comments/{commentId}", issueId, commentId)
+                        .header("Authorization", "Bearer " + tokenFor(outsider))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new IssueCommentUpdateRequest("몰래 수정"))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ISSUE_COMMENT_FORBIDDEN"));
+    }
+
+    @Test
+    void authorCanDeleteOwnCommentViaApi() throws Exception {
+        User author = newUser("ic6-author");
+        WorkspaceResponse workspace = workspaceService.create(author.getId(), "이슈 댓글 API 삭제 워크스페이스");
+        Long issueId = createIssue(author, workspace.id());
+        Long commentId = createComment(author, issueId, "지울 댓글");
+
+        mockMvc.perform(delete("/api/issues/{issueId}/comments/{commentId}", issueId, commentId)
+                        .header("Authorization", "Bearer " + tokenFor(author)))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/issues/{issueId}/comments", issueId)
+                        .header("Authorization", "Bearer " + tokenFor(author)))
+                .andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
+    void nonAuthorCannotDeleteCommentViaApi() throws Exception {
+        User author = newUser("ic7-author");
+        User outsider = newUser("ic7-outsider");
+        WorkspaceResponse workspace = workspaceService.create(author.getId(), "이슈 댓글 API 삭제권한 워크스페이스");
+        Long issueId = createIssue(author, workspace.id());
+        Long commentId = createComment(author, issueId, "지울 댓글");
+
+        mockMvc.perform(delete("/api/issues/{issueId}/comments/{commentId}", issueId, commentId)
+                        .header("Authorization", "Bearer " + tokenFor(outsider)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ISSUE_COMMENT_FORBIDDEN"));
+    }
+
+    private Long createIssue(User author, Long workspaceId) throws Exception {
+        String createResponse = mockMvc.perform(post("/api/issues")
+                        .header("Authorization", "Bearer " + tokenFor(author))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new IssueCreateRequest(workspaceId, "제목", "설명", null))))
+                .andReturn().getResponse().getContentAsString();
+        return objectMapper.readTree(createResponse).get("id").asLong();
+    }
+
+    private Long createComment(User author, Long issueId, String content) throws Exception {
+        String createResponse = mockMvc.perform(post("/api/issues/{issueId}/comments", issueId)
+                        .header("Authorization", "Bearer " + tokenFor(author))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new IssueCommentCreateRequest(content))))
+                .andReturn().getResponse().getContentAsString();
+        return objectMapper.readTree(createResponse).get("id").asLong();
     }
 }

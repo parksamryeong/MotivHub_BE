@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.motivhub.be.issue.dto.IssueCommentResponse;
 import com.motivhub.be.issue.dto.IssueResponse;
+import com.motivhub.be.issue.exception.IssueCommentForbiddenException;
+import com.motivhub.be.issue.exception.IssueCommentNotFoundException;
 import com.motivhub.be.issue.exception.IssueNotFoundException;
 import com.motivhub.be.issue.repository.IssueCommentRepository;
 import com.motivhub.be.support.AbstractIntegrationTest;
@@ -80,5 +82,63 @@ class IssueCommentServiceTest extends AbstractIntegrationTest {
     void listingCommentsOnUnknownIssueThrows() {
         assertThatThrownBy(() -> issueCommentService.list(999_999L))
                 .isInstanceOf(IssueNotFoundException.class);
+    }
+
+    @Test
+    void authorCanUpdateOwnComment() {
+        User author = newUser("comment-update-author");
+        WorkspaceResponse workspace = workspaceService.create(author.getId(), "댓글 수정 워크스페이스");
+        IssueResponse issue = issueService.create(author.getId(), workspace.id(), "제목", "설명", null);
+        IssueCommentResponse comment = issueCommentService.create(author.getId(), issue.id(), "원래 내용");
+
+        IssueCommentResponse updated = issueCommentService.update(author.getId(), issue.id(), comment.id(), "고친 내용");
+
+        assertThat(updated.content()).isEqualTo("고친 내용");
+    }
+
+    @Test
+    void nonAuthorCannotUpdateComment() {
+        User author = newUser("comment-update-author2");
+        User outsider = newUser("comment-update-outsider2");
+        WorkspaceResponse workspace = workspaceService.create(author.getId(), "댓글 수정 권한 워크스페이스");
+        IssueResponse issue = issueService.create(author.getId(), workspace.id(), "제목", "설명", null);
+        IssueCommentResponse comment = issueCommentService.create(author.getId(), issue.id(), "원래 내용");
+
+        assertThatThrownBy(() -> issueCommentService.update(outsider.getId(), issue.id(), comment.id(), "몰래 수정"))
+                .isInstanceOf(IssueCommentForbiddenException.class);
+    }
+
+    @Test
+    void authorCanDeleteOwnComment() {
+        User author = newUser("comment-delete-author");
+        WorkspaceResponse workspace = workspaceService.create(author.getId(), "댓글 삭제 워크스페이스");
+        IssueResponse issue = issueService.create(author.getId(), workspace.id(), "제목", "설명", null);
+        IssueCommentResponse comment = issueCommentService.create(author.getId(), issue.id(), "지울 댓글");
+
+        issueCommentService.delete(author.getId(), issue.id(), comment.id());
+
+        assertThat(issueCommentService.list(issue.id())).isEmpty();
+    }
+
+    @Test
+    void nonAuthorCannotDeleteComment() {
+        User author = newUser("comment-delete-author2");
+        User outsider = newUser("comment-delete-outsider2");
+        WorkspaceResponse workspace = workspaceService.create(author.getId(), "댓글 삭제 권한 워크스페이스");
+        IssueResponse issue = issueService.create(author.getId(), workspace.id(), "제목", "설명", null);
+        IssueCommentResponse comment = issueCommentService.create(author.getId(), issue.id(), "지울 댓글");
+
+        assertThatThrownBy(() -> issueCommentService.delete(outsider.getId(), issue.id(), comment.id()))
+                .isInstanceOf(IssueCommentForbiddenException.class);
+    }
+
+    @Test
+    void updatingUnknownCommentThrows() {
+        User author = newUser("comment-update-unknown");
+        WorkspaceResponse workspace = workspaceService.create(author.getId(), "댓글 없음 워크스페이스");
+        IssueResponse issue = issueService.create(author.getId(), workspace.id(), "제목", "설명", null);
+
+        assertThatThrownBy(() -> issueCommentService.update(author.getId(), issue.id(), 999_999L, "내용"))
+                .isInstanceOf(IssueCommentNotFoundException.class);
     }
 }

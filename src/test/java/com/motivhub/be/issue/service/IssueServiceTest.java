@@ -87,7 +87,7 @@ class IssueServiceTest extends AbstractIntegrationTest {
         issueService.create(authorA.getId(), workspaceA.id(), "첫번째", "설명1", null);
         issueService.create(authorB.getId(), workspaceB.id(), "두번째", "설명2", null);
 
-        List<IssueResponse> issues = issueService.list();
+        List<IssueResponse> issues = issueService.list(null);
 
         assertThat(issues).extracting(IssueResponse::title).containsExactly("두번째", "첫번째");
     }
@@ -204,8 +204,82 @@ class IssueServiceTest extends AbstractIntegrationTest {
 
         workspaceService.delete(author.getId(), workspace.id());
 
-        assertThat(issueService.list()).extracting(IssueResponse::id).doesNotContain(created.id());
+        assertThat(issueService.list(null)).extracting(IssueResponse::id).doesNotContain(created.id());
         assertThatThrownBy(() -> issueService.getDetail(created.id()))
                 .isInstanceOf(IssueNotFoundException.class);
+    }
+
+    @Test
+    void searchMatchesTitleCaseInsensitively() {
+        User author = newUser("search-title");
+        WorkspaceResponse workspace = workspaceService.create(author.getId(), "검색 제목 워크스페이스");
+        issueService.create(author.getId(), workspace.id(), "Gradle Build 실패", "설명", null);
+        issueService.create(author.getId(), workspace.id(), "다른 이슈", "무관한 설명", null);
+
+        List<IssueResponse> results = issueService.list("gradle");
+
+        assertThat(results).extracting(IssueResponse::title).containsExactly("Gradle Build 실패");
+    }
+
+    @Test
+    void searchMatchesProblemDescriptionAndSolution() {
+        User author = newUser("search-body");
+        WorkspaceResponse workspace = workspaceService.create(author.getId(), "검색 본문 워크스페이스");
+        issueService.create(author.getId(), workspace.id(), "제목1", "여기에 키워드가 있음", null);
+        issueService.create(author.getId(), workspace.id(), "제목2", "설명", "해결책에 키워드가 있음");
+        issueService.create(author.getId(), workspace.id(), "제목3", "무관", "무관");
+
+        List<IssueResponse> results = issueService.list("키워드");
+
+        assertThat(results).extracting(IssueResponse::title).containsExactlyInAnyOrder("제목1", "제목2");
+    }
+
+    @Test
+    void blankSearchKeywordReturnsAllIssues() {
+        User author = newUser("search-blank");
+        WorkspaceResponse workspace = workspaceService.create(author.getId(), "검색 빈값 워크스페이스");
+        issueService.create(author.getId(), workspace.id(), "제목1", "설명1", null);
+        issueService.create(author.getId(), workspace.id(), "제목2", "설명2", null);
+
+        assertThat(issueService.list("   ")).hasSizeGreaterThanOrEqualTo(2);
+    }
+
+    @Test
+    void listIncludesAccurateCommentCountPerIssue() {
+        User author = newUser("count-list");
+        WorkspaceResponse workspace = workspaceService.create(author.getId(), "댓글수 목록 워크스페이스");
+        IssueResponse withComments = issueService.create(author.getId(), workspace.id(), "댓글 있는 이슈", "설명", null);
+        IssueResponse withoutComments = issueService.create(author.getId(), workspace.id(), "댓글 없는 이슈", "설명", null);
+        issueCommentService.create(author.getId(), withComments.id(), "댓글1");
+        issueCommentService.create(author.getId(), withComments.id(), "댓글2");
+
+        List<IssueResponse> results = issueService.list(null);
+
+        assertThat(results.stream().filter(i -> i.id().equals(withComments.id())).findFirst().orElseThrow()
+                .commentCount()).isEqualTo(2);
+        assertThat(results.stream().filter(i -> i.id().equals(withoutComments.id())).findFirst().orElseThrow()
+                .commentCount()).isEqualTo(0);
+    }
+
+    @Test
+    void getDetailIncludesAccurateCommentCount() {
+        User author = newUser("count-detail");
+        WorkspaceResponse workspace = workspaceService.create(author.getId(), "댓글수 상세 워크스페이스");
+        IssueResponse issue = issueService.create(author.getId(), workspace.id(), "제목", "설명", null);
+        issueCommentService.create(author.getId(), issue.id(), "댓글1");
+
+        IssueResponse detail = issueService.getDetail(issue.id());
+
+        assertThat(detail.commentCount()).isEqualTo(1);
+    }
+
+    @Test
+    void newlyCreatedIssueHasZeroCommentCount() {
+        User author = newUser("count-create");
+        WorkspaceResponse workspace = workspaceService.create(author.getId(), "댓글수 생성 워크스페이스");
+
+        IssueResponse issue = issueService.create(author.getId(), workspace.id(), "제목", "설명", null);
+
+        assertThat(issue.commentCount()).isEqualTo(0);
     }
 }

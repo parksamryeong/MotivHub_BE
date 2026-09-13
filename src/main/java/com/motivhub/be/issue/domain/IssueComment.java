@@ -39,14 +39,28 @@ public class IssueComment {
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+
     private IssueComment(Issue issue, User author, String content) {
         this.issue = issue;
         this.author = author;
         this.content = content;
-        this.createdAt = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now();
+        this.createdAt = now;
+        this.updatedAt = now;
     }
 
     public static IssueComment create(Issue issue, User author, String content) {
         return new IssueComment(issue, author, content);
+    }
+
+    public void updateContent(String content) {
+        this.content = content;
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    public boolean isAuthoredBy(Long userId) {
+        return this.author.getId().equals(userId);
     }
 }

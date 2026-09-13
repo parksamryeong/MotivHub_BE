@@ -13,4 +13,10 @@ public interface IssueCommentRepository extends JpaRepository<IssueComment, Long
     List<IssueComment> findByIssueIdOrderByCreatedAtAsc(@Param("issueId") Long issueId);
 
     void deleteByIssueId(Long issueId);
+
+    long countByIssueId(Long issueId);
+
+    @Query("SELECT new com.motivhub.be.issue.repository.IssueCommentCount(ic.issue.id, COUNT(ic)) "
+            + "FROM IssueComment ic WHERE ic.issue.id IN :issueIds GROUP BY ic.issue.id")
+    List<IssueCommentCount> countByIssueIdsGroupByIssue(@Param("issueIds") List<Long> issueIds);
 }

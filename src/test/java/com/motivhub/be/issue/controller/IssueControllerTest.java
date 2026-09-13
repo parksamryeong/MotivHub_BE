@@ -184,4 +184,21 @@ class IssueControllerTest extends AbstractIntegrationTest {
                         .header("Authorization", "Bearer " + tokenFor(author)))
                 .andExpect(status().isNoContent());
     }
+
+    @Test
+    void searchByQueryParamFiltersToMatchingTitle() throws Exception {
+        User author = newUser("c7-author");
+        WorkspaceResponse workspace = workspaceService.create(author.getId(), "이슈 검색 API 워크스페이스");
+        mockMvc.perform(post("/api/issues")
+                        .header("Authorization", "Bearer " + tokenFor(author))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new IssueCreateRequest(workspace.id(), "검색용 특이한 제목", "설명", null))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/issues").queryParam("q", "특이한")
+                        .header("Authorization", "Bearer " + tokenFor(author)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].title").value("검색용 특이한 제목"));
+    }
 }

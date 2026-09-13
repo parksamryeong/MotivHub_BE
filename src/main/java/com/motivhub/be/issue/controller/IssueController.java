@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -33,8 +34,8 @@ public class IssueController {
     }
 
     @GetMapping("/api/issues")
-    public ResponseEntity<List<IssueResponse>> list() {
-        return ResponseEntity.ok(issueService.list());
+    public ResponseEntity<List<IssueResponse>> list(@RequestParam(required = false) String q) {
+        return ResponseEntity.ok(issueService.list(q));
     }
 
     @GetMapping("/api/issues/{id}")
