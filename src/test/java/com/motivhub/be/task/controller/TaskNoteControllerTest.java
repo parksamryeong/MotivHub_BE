@@ -121,4 +121,44 @@ class TaskNoteControllerTest extends AbstractIntegrationTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("TASK_NOT_FOUND"));
     }
+
+    @Test
+    void gettingNoteYjsStateBeforeAnyoneSavesReturnsNullState() throws Exception {
+        User owner = createUniqueUser("note-yjs-ctrl-empty");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "노트 yjs API 빈 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("노트 yjs API 빈 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+
+        mockMvc.perform(get("/api/tasks/{taskId}/note/yjs-state", task.id())
+                        .header("Authorization", "Bearer " + tokenFor(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.state").doesNotExist());
+    }
+
+    @Test
+    void plainMemberCanGetNoteYjsStateWithoutEditPermission() throws Exception {
+        User owner = createUniqueUser("note-yjs-ctrl-perm-owner");
+        User plainMember = createUniqueUser("note-yjs-ctrl-perm-member");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "노트 yjs API 권한 워크스페이스");
+        joinAsMember(workspace.id(), plainMember);
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("노트 yjs API 권한 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+
+        mockMvc.perform(get("/api/tasks/{taskId}/note/yjs-state", task.id())
+                        .header("Authorization", "Bearer " + tokenFor(plainMember)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void nonMemberCannotGetNoteYjsState() throws Exception {
+        User owner = createUniqueUser("note-yjs-ctrl-outsider-owner");
+        User outsider = createUniqueUser("note-yjs-ctrl-outsider");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "노트 yjs API 비멤버 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("노트 yjs API 비멤버 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+
+        mockMvc.perform(get("/api/tasks/{taskId}/note/yjs-state", task.id())
+                        .header("Authorization", "Bearer " + tokenFor(outsider)))
+                .andExpect(status().isForbidden());
+    }
 }

@@ -2,6 +2,7 @@ package com.motivhub.be.task.controller;
 
 import com.motivhub.be.task.dto.TaskNoteResponse;
 import com.motivhub.be.task.dto.TaskNoteUpdateRequest;
+import com.motivhub.be.task.dto.TaskYjsStateResponse;
 import com.motivhub.be.task.service.TaskNoteService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
@@ -32,5 +33,11 @@ public class TaskNoteController {
             @AuthenticationPrincipal Long userId, @PathVariable Long taskId,
             @Valid @RequestBody TaskNoteUpdateRequest request) {
         return ResponseEntity.ok(taskNoteService.upsert(userId, taskId, request.content()));
+    }
+
+    @GetMapping("/api/tasks/{taskId}/note/yjs-state")
+    public ResponseEntity<TaskYjsStateResponse> getYjsState(
+            @AuthenticationPrincipal Long userId, @PathVariable Long taskId) {
+        return ResponseEntity.ok(new TaskYjsStateResponse(taskNoteService.getYjsStateBase64(userId, taskId)));
     }
 }

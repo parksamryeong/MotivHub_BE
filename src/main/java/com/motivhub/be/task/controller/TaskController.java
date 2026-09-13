@@ -9,6 +9,7 @@ import com.motivhub.be.task.dto.TaskDetailResponse;
 import com.motivhub.be.task.dto.TaskPeriodUpdateRequest;
 import com.motivhub.be.task.dto.TaskResponse;
 import com.motivhub.be.task.dto.TaskStatusUpdateRequest;
+import com.motivhub.be.task.dto.TaskYjsStateResponse;
 import com.motivhub.be.task.service.TaskActivityLogService;
 import com.motivhub.be.task.service.TaskChecklistItemService;
 import com.motivhub.be.task.service.TaskService;
@@ -102,5 +103,11 @@ public class TaskController {
     public ResponseEntity<TaskResponse> removeAssignee(
             @AuthenticationPrincipal Long userId, @PathVariable Long id, @PathVariable Long targetUserId) {
         return ResponseEntity.ok(taskService.removeAssignee(userId, id, targetUserId));
+    }
+
+    @GetMapping("/api/tasks/{id}/description/yjs-state")
+    public ResponseEntity<TaskYjsStateResponse> getDescriptionYjsState(
+            @AuthenticationPrincipal Long userId, @PathVariable Long id) {
+        return ResponseEntity.ok(new TaskYjsStateResponse(taskService.getDescriptionYjsStateBase64(userId, id)));
     }
 }

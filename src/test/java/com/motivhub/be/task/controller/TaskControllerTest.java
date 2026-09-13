@@ -1,11 +1,13 @@
 package com.motivhub.be.task.controller;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.motivhub.be.auth.jwt.JwtProvider;
 import com.motivhub.be.support.AbstractIntegrationTest;
@@ -15,6 +17,7 @@ import com.motivhub.be.task.dto.TaskCreateRequest;
 import com.motivhub.be.task.dto.TaskPeriodUpdateRequest;
 import com.motivhub.be.task.dto.TaskResponse;
 import com.motivhub.be.task.dto.TaskStatusUpdateRequest;
+import com.motivhub.be.task.service.TaskService;
 import com.motivhub.be.user.domain.SocialProvider;
 import com.motivhub.be.user.domain.User;
 import com.motivhub.be.user.repository.UserRepository;
@@ -41,6 +44,7 @@ class TaskControllerTest extends AbstractIntegrationTest {
     @Autowired private UserRepository userRepository;
     @Autowired private WorkspaceService workspaceService;
     @Autowired private WorkspaceMemberRepository workspaceMemberRepository;
+    @Autowired private TaskService taskService;
 
     private User newUser(String suffix) {
         return userRepository.save(User.create(
@@ -174,5 +178,49 @@ class TaskControllerTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.checklistItems.length()").value(1))
                 .andExpect(jsonPath("$.checklistItems[0].content").value("상세 확인용 항목"))
                 .andExpect(jsonPath("$.checklistItems[0].isDone").value(false));
+    }
+
+    @Test
+    void gettingDescriptionYjsStateBeforeAnyoneSavesReturnsNullState() throws Exception {
+        User owner = createUniqueUser("desc-yjs-ctrl-empty");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "설명 yjs API 빈 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("설명 yjs API 빈 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+
+        mockMvc.perform(get("/api/tasks/{id}/description/yjs-state", task.id())
+                        .header("Authorization", "Bearer " + tokenFor(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.state").doesNotExist());
+    }
+
+    @Test
+    void gettingDescriptionYjsStateAfterSaveReturnsBase64EncodedValue() throws Exception {
+        User owner = createUniqueUser("desc-yjs-ctrl-saved");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "설명 yjs API 저장 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("설명 yjs API 저장 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+        byte[] state = new byte[] {1, 2, 3};
+        taskService.updateDescriptionYjsState(task.id(), state);
+
+        String responseBody = mockMvc.perform(get("/api/tasks/{id}/description/yjs-state", task.id())
+                        .header("Authorization", "Bearer " + tokenFor(owner)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        JsonNode json = objectMapper.readTree(responseBody);
+        assertThat(json.get("state").asText()).isEqualTo(java.util.Base64.getEncoder().encodeToString(state));
+    }
+
+    @Test
+    void plainMemberWithoutEditPermissionCannotGetDescriptionYjsState() throws Exception {
+        User owner = createUniqueUser("desc-yjs-ctrl-perm-owner");
+        User plainMember = createUniqueUser("desc-yjs-ctrl-perm-member");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "설명 yjs API 권한 워크스페이스");
+        joinAsMember(workspace.id(), plainMember);
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("설명 yjs API 권한 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+
+        mockMvc.perform(get("/api/tasks/{id}/description/yjs-state", task.id())
+                        .header("Authorization", "Bearer " + tokenFor(plainMember)))
+                .andExpect(status().isForbidden());
     }
 }
