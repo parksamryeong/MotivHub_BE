@@ -15,6 +15,7 @@ import com.motivhub.be.workspace.exception.WorkspaceMemberNotFoundException;
 import com.motivhub.be.workspace.exception.WorkspaceNotFoundException;
 import com.motivhub.be.workspace.event.WorkspaceMemberRemovedEvent;
 import com.motivhub.be.workspace.dto.WorkspaceTaskCounts;
+import com.motivhub.be.workspace.repository.WorkspaceMemberCount;
 import com.motivhub.be.workspace.repository.WorkspaceMemberRepository;
 import com.motivhub.be.workspace.repository.WorkspaceRepository;
 import com.motivhub.be.task.domain.TaskStatus;
@@ -62,10 +63,24 @@ public class WorkspaceService {
         List<WorkspaceMember> members = workspaceMemberRepository.findByUserIdFetchWorkspace(userId);
         List<Long> workspaceIds = members.stream().map(member -> member.getWorkspace().getId()).toList();
         Map<Long, WorkspaceTaskCounts> countsByWorkspaceId = taskCountsByWorkspaceId(workspaceIds);
+        Map<Long, Long> memberCountByWorkspaceId = memberCountByWorkspaceId(workspaceIds);
         return members.stream()
                 .map(member -> WorkspaceResponse.of(member.getWorkspace(), member.getRole(),
-                        countsByWorkspaceId.getOrDefault(member.getWorkspace().getId(), WorkspaceTaskCounts.empty())))
+                        countsByWorkspaceId.getOrDefault(member.getWorkspace().getId(), WorkspaceTaskCounts.empty()),
+                        memberCountByWorkspaceId.getOrDefault(member.getWorkspace().getId(), 0L)))
                 .toList();
+    }
+
+    // 워크스페이스마다 개별 쿼리를 날리지 않고, 한 번의 집계 쿼리로 전부 가져온 뒤 메모리에서 조합한다(N+1 방지).
+    private Map<Long, Long> memberCountByWorkspaceId(List<Long> workspaceIds) {
+        if (workspaceIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, Long> result = new HashMap<>();
+        for (WorkspaceMemberCount row : workspaceMemberRepository.countByWorkspaceIdsGroupByWorkspace(workspaceIds)) {
+            result.put(row.workspaceId(), row.count());
+        }
+        return result;
     }
 
     // 워크스페이스마다 개별 쿼리를 날리지 않고, 한 번의 집계 쿼리로 전부 가져온 뒤 메모리에서 조합한다(N+1 방지).

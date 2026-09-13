@@ -9,15 +9,17 @@ public record WorkspaceResponse(
         String name,
         WorkspaceRole myRole,
         LocalDateTime createdAt,
-        WorkspaceTaskCounts taskCounts) {
+        WorkspaceTaskCounts taskCounts,
+        long memberCount) {
 
     public static WorkspaceResponse of(Workspace workspace, WorkspaceRole myRole) {
         return new WorkspaceResponse(workspace.getId(), workspace.getName(), myRole, workspace.getCreatedAt(),
-                WorkspaceTaskCounts.empty());
+                WorkspaceTaskCounts.empty(), 0);
     }
 
-    public static WorkspaceResponse of(Workspace workspace, WorkspaceRole myRole, WorkspaceTaskCounts taskCounts) {
+    public static WorkspaceResponse of(Workspace workspace, WorkspaceRole myRole, WorkspaceTaskCounts taskCounts,
+                                        long memberCount) {
         return new WorkspaceResponse(workspace.getId(), workspace.getName(), myRole, workspace.getCreatedAt(),
-                taskCounts);
+                taskCounts, memberCount);
     }
 }

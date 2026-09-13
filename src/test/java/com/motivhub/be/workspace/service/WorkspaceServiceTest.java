@@ -123,6 +123,28 @@ class WorkspaceServiceTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void listMineIncludesMemberCount() {
+        User owner = newUser("membercount-owner");
+        User member = newUser("membercount-member");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "멤버 수 워크스페이스");
+        joinAsMember(workspace.id(), member);
+
+        List<WorkspaceResponse> mine = workspaceService.listMine(owner.getId());
+
+        assertThat(mine.get(0).memberCount()).isEqualTo(2);
+    }
+
+    @Test
+    void listMineReturnsMemberCountOneForSoloOwner() {
+        User owner = newUser("membercount-solo-owner");
+        workspaceService.create(owner.getId(), "혼자 워크스페이스");
+
+        List<WorkspaceResponse> mine = workspaceService.listMine(owner.getId());
+
+        assertThat(mine.get(0).memberCount()).isEqualTo(1);
+    }
+
+    @Test
     void getDetailFailsForNonMember() {
         User owner = newUser("owner3");
         User stranger = newUser("stranger3");

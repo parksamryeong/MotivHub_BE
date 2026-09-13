@@ -18,4 +18,8 @@ public interface WorkspaceMemberRepository extends JpaRepository<WorkspaceMember
 
     @Query("SELECT wm FROM WorkspaceMember wm JOIN FETCH wm.workspace w WHERE wm.user.id = :userId AND w.deletedAt IS NULL")
     List<WorkspaceMember> findByUserIdFetchWorkspace(@Param("userId") Long userId);
+
+    @Query("SELECT new com.motivhub.be.workspace.repository.WorkspaceMemberCount(wm.workspace.id, COUNT(wm)) "
+            + "FROM WorkspaceMember wm WHERE wm.workspace.id IN :workspaceIds GROUP BY wm.workspace.id")
+    List<WorkspaceMemberCount> countByWorkspaceIdsGroupByWorkspace(@Param("workspaceIds") List<Long> workspaceIds);
 }
