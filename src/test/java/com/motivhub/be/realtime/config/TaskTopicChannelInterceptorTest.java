@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.motivhub.be.auth.jwt.JwtProvider;
 import com.motivhub.be.realtime.exception.StompAuthenticationException;
+import com.motivhub.be.realtime.service.TaskEditableField;
 import com.motivhub.be.support.AbstractIntegrationTest;
 import com.motivhub.be.task.dto.TaskCreateRequest;
 import com.motivhub.be.task.dto.TaskResponse;
@@ -26,6 +27,8 @@ import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.MessageBuilder;
 
 class TaskTopicChannelInterceptorTest extends AbstractIntegrationTest {
+
+    private static final String DEFAULT_SESSION_ID = "test-session";
 
     @Autowired private TaskTopicChannelInterceptor interceptor;
     @Autowired private JwtProvider jwtProvider;
@@ -48,8 +51,13 @@ class TaskTopicChannelInterceptorTest extends AbstractIntegrationTest {
     }
 
     private Message<byte[]> subscribeMessage(String destination, Long userId) {
+        return subscribeMessage(destination, userId, DEFAULT_SESSION_ID);
+    }
+
+    private Message<byte[]> subscribeMessage(String destination, Long userId, String sessionId) {
         StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
         accessor.setDestination(destination);
+        accessor.setSessionId(sessionId);
         if (userId != null) {
             accessor.setUser(new StompPrincipal(userId));
         }
@@ -57,8 +65,13 @@ class TaskTopicChannelInterceptorTest extends AbstractIntegrationTest {
     }
 
     private Message<byte[]> sendMessage(String destination, Long userId) {
+        return sendMessage(destination, userId, DEFAULT_SESSION_ID);
+    }
+
+    private Message<byte[]> sendMessage(String destination, Long userId, String sessionId) {
         StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SEND);
         accessor.setDestination(destination);
+        accessor.setSessionId(sessionId);
         if (userId != null) {
             accessor.setUser(new StompPrincipal(userId));
         }
@@ -180,19 +193,6 @@ class TaskTopicChannelInterceptorTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void sendCommandIsRejectedEvenForAuthenticatedMember() {
-        User owner = newUser("send-owner");
-        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "SEND 거부 워크스페이스");
-        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
-                new TaskCreateRequest("SEND 거부 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
-
-        Message<byte[]> message = sendMessage("/topic/tasks/" + task.id(), owner.getId());
-
-        assertThatThrownBy(() -> interceptor.preSend(message, null))
-                .isInstanceOf(StompAuthenticationException.class);
-    }
-
-    @Test
     void memberCanSubscribeToTaskPresenceTopic() {
         User owner = newUser("presence-sub-owner");
         WorkspaceResponse workspace = workspaceService.create(owner.getId(), "프레즌스 구독 테스트 워크스페이스");
@@ -246,6 +246,150 @@ class TaskTopicChannelInterceptorTest extends AbstractIntegrationTest {
         workspaceService.create(owner.getId(), "보드 와일드카드 구독 워크스페이스");
 
         Message<byte[]> message = subscribeMessage("/topic/workspaces/*/tasks", owner.getId());
+
+        assertThatThrownBy(() -> interceptor.preSend(message, null))
+                .isInstanceOf(StompAuthenticationException.class);
+    }
+
+    @Test
+    void memberCanSubscribeToTaskEditBroadcastTopic() {
+        User owner = newUser("edit-sub-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "편집 구독 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("편집 구독 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        Message<byte[]> message = subscribeMessage(
+                "/topic/tasks/" + task.id() + "/description/edits", owner.getId());
+
+        assertThatCode(() -> interceptor.preSend(message, null)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void nonMemberCannotSubscribeToTaskEditBroadcastTopic() {
+        User owner = newUser("edit-sub-owner2");
+        User outsider = newUser("edit-sub-outsider");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "편집 구독 권한 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("편집 구독 권한 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        Message<byte[]> message = subscribeMessage(
+                "/topic/tasks/" + task.id() + "/description/edits", outsider.getId());
+
+        assertThatThrownBy(() -> interceptor.preSend(message, null))
+                .isInstanceOf(NotWorkspaceMemberException.class);
+    }
+
+    @Test
+    void memberCanSubscribeToTaskEditSaveRequestTopic() {
+        User owner = newUser("save-req-sub-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "저장요청 구독 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("저장요청 구독 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        Message<byte[]> message = subscribeMessage(
+                "/topic/tasks/" + task.id() + "/note/save-request", owner.getId());
+
+        assertThatCode(() -> interceptor.preSend(message, null)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void memberCanSubscribeToTaskEditUserQueue() {
+        User owner = newUser("user-queue-sub-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "유저큐 구독 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("유저큐 구독 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        Message<byte[]> message = subscribeMessage(
+                "/user/queue/tasks/" + task.id() + "/description/edits", owner.getId());
+
+        assertThatCode(() -> interceptor.preSend(message, null)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void nonMemberCannotSubscribeToTaskEditUserQueue() {
+        User owner = newUser("user-queue-sub-owner2");
+        User outsider = newUser("user-queue-sub-outsider");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "유저큐 구독 권한 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("유저큐 구독 권한 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        Message<byte[]> message = subscribeMessage(
+                "/user/queue/tasks/" + task.id() + "/description/edits", outsider.getId());
+
+        assertThatThrownBy(() -> interceptor.preSend(message, null))
+                .isInstanceOf(NotWorkspaceMemberException.class);
+    }
+
+    @Test
+    void sendCommandIsRejectedEvenForAuthenticatedMember() {
+        User owner = newUser("send-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "SEND 거부 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("SEND 거부 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        Message<byte[]> message = sendMessage("/topic/tasks/" + task.id(), owner.getId());
+
+        assertThatThrownBy(() -> interceptor.preSend(message, null))
+                .isInstanceOf(StompAuthenticationException.class);
+    }
+
+    @Test
+    void sendToEditDestinationWithoutPriorSubscribeIsRejected() {
+        User owner = newUser("edit-send-no-sub");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "미구독 SEND 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("미구독 SEND 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        Message<byte[]> message = sendMessage(
+                "/app/tasks/" + task.id() + "/description/edits", owner.getId());
+
+        assertThatThrownBy(() -> interceptor.preSend(message, null))
+                .isInstanceOf(StompAuthenticationException.class);
+    }
+
+    @Test
+    void sendToEditDestinationAfterSubscribingIsAllowed() {
+        User owner = newUser("edit-send-with-sub");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "구독후 SEND 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("구독후 SEND 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+        String sessionId = "edit-send-session";
+        interceptor.preSend(subscribeMessage(
+                "/topic/tasks/" + task.id() + "/description/edits", owner.getId(), sessionId), null);
+
+        Message<byte[]> message = sendMessage(
+                "/app/tasks/" + task.id() + "/description/edits", owner.getId(), sessionId);
+
+        assertThatCode(() -> interceptor.preSend(message, null)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void sendToSnapshotDestinationAfterSubscribingToEditsIsAllowed() {
+        User owner = newUser("snapshot-send-with-sub");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "스냅샷 SEND 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("스냅샷 SEND 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+        String sessionId = "snapshot-send-session";
+        interceptor.preSend(subscribeMessage(
+                "/topic/tasks/" + task.id() + "/note/edits", owner.getId(), sessionId), null);
+
+        Message<byte[]> message = sendMessage(
+                "/app/tasks/" + task.id() + "/note/snapshot", owner.getId(), sessionId);
+
+        assertThatCode(() -> interceptor.preSend(message, null)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void sendToEditDestinationFromDifferentSessionIsRejected() {
+        User owner = newUser("edit-send-other-session");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "다른세션 SEND 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("다른세션 SEND 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+        interceptor.preSend(subscribeMessage(
+                "/topic/tasks/" + task.id() + "/description/edits", owner.getId(), "session-A"), null);
+
+        Message<byte[]> message = sendMessage(
+                "/app/tasks/" + task.id() + "/description/edits", owner.getId(), "session-B");
 
         assertThatThrownBy(() -> interceptor.preSend(message, null))
                 .isInstanceOf(StompAuthenticationException.class);
