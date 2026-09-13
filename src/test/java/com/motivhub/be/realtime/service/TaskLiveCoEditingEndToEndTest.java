@@ -151,7 +151,7 @@ class TaskLiveCoEditingEndToEndTest extends AbstractIntegrationTest {
 
         // 3) 접속 중인 아무 클라이언트(teammate)나 스냅샷으로 응답 -> DB 반영 + 버퍼 비워짐
         teammateSession.send("/app/tasks/" + task.id() + "/description/snapshot",
-                new TaskEditSnapshotMessage("최종 합쳐진 설명"));
+                new TaskEditSnapshotMessage("최종 합쳐진 설명", null));
         // 저장은 별도 스레드(clientInboundChannel)의 별도 트랜잭션에서 커밋된다. 아래 검증은 이 테스트
         // 트랜잭션의 첫 읽기이므로(= 아직 스냅샷이 잡히지 않았다) 커밋된 값을 보게 된다. 단, 같은
         // 트랜잭션에서 재조회해도 JPA 1차 캐시 탓에 갱신이 안 보이므로 폴링하지 않고 한 번만 읽는다.

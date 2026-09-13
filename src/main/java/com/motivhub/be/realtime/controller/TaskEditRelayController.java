@@ -95,11 +95,18 @@ public class TaskEditRelayController {
                 return;
             }
 
+            byte[] yjsState = decodeYjsState(message.yjsState());
             if (editableField == TaskEditableField.DESCRIPTION) {
                 Task task = taskService.getTask(taskId);
                 taskService.updateContent(userId, taskId, task.getName(), message.content());
+                if (yjsState != null) {
+                    taskService.updateDescriptionYjsState(taskId, yjsState);
+                }
             } else {
                 taskNoteService.upsert(userId, taskId, message.content());
+                if (yjsState != null) {
+                    taskNoteService.updateYjsState(taskId, yjsState);
+                }
             }
 
             // 저장 요청이 나간 뒤에 새 타이핑 업데이트가 도착했다면, 방금 영속화한 스냅샷은 이미 그
@@ -125,5 +132,9 @@ public class TaskEditRelayController {
                 .filter(metadata -> metadata.lastRequestedAt() != null)
                 .map(metadata -> metadata.lastUpdateAt().isAfter(metadata.lastRequestedAt()))
                 .orElse(false);
+    }
+
+    private byte[] decodeYjsState(String base64) {
+        return base64 == null ? null : java.util.Base64.getDecoder().decode(base64);
     }
 }

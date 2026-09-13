@@ -171,7 +171,7 @@ class TaskEditRelayControllerTest extends AbstractIntegrationTest {
         Thread.sleep(300);
 
         session.send("/app/tasks/" + task.id() + "/description/snapshot",
-                new TaskEditSnapshotMessage("실시간으로 합쳐진 최종 설명"));
+                new TaskEditSnapshotMessage("실시간으로 합쳐진 최종 설명", null));
         Thread.sleep(500);
 
         assertThat(taskService.getTask(task.id()).getDescription()).isEqualTo("실시간으로 합쳐진 최종 설명");
@@ -199,7 +199,7 @@ class TaskEditRelayControllerTest extends AbstractIntegrationTest {
         Thread.sleep(300);
 
         session.send("/app/tasks/" + task.id() + "/description/snapshot",
-                new TaskEditSnapshotMessage("가".repeat(2001)));
+                new TaskEditSnapshotMessage("가".repeat(2001), null));
         Thread.sleep(500);
 
         assertThat(taskService.getTask(task.id()).getDescription()).isNull();
@@ -235,7 +235,7 @@ class TaskEditRelayControllerTest extends AbstractIntegrationTest {
         Thread.sleep(300);
 
         session.send("/app/tasks/" + task.id() + "/note/snapshot",
-                new TaskEditSnapshotMessage("저장 요청 시점의 노트"));
+                new TaskEditSnapshotMessage("저장 요청 시점의 노트", null));
         Thread.sleep(500);
 
         // 저장 자체는 정상적으로 됐지만, 버퍼는 남아있어야 한다.
@@ -262,12 +262,63 @@ class TaskEditRelayControllerTest extends AbstractIntegrationTest {
         Thread.sleep(300);
 
         session.send("/app/tasks/" + task.id() + "/note/snapshot",
-                new TaskEditSnapshotMessage("실시간으로 합쳐진 최종 노트"));
+                new TaskEditSnapshotMessage("실시간으로 합쳐진 최종 노트", null));
         Thread.sleep(500);
 
         TaskNoteResponse note = taskNoteService.get(owner.getId(), task.id());
         assertThat(note.content()).isEqualTo("실시간으로 합쳐진 최종 노트");
         assertThat(bufferService.isEmpty(task.id(), TaskEditableField.NOTE)).isTrue();
+
+        session.disconnect();
+    }
+
+    @Test
+    void snapshotWithYjsStatePersistsBothContentAndBinaryState() throws Exception {
+        User owner = newUser("snapshot-yjs-desc-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "yjs 스냅샷 설명 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("yjs 스냅샷 설명 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+        TestTransaction.flagForCommit();
+        TestTransaction.end();
+        TestTransaction.start();
+
+        StompSession session = connectAsUser(owner);
+        subscribeToEdits(session, task.id(), "description");
+        session.send("/app/tasks/" + task.id() + "/description/edits", new TaskEditUpdateMessage("u1"));
+        Thread.sleep(300);
+
+        String encodedState = java.util.Base64.getEncoder().encodeToString(new byte[] {9, 8, 7});
+        session.send("/app/tasks/" + task.id() + "/description/snapshot",
+                new TaskEditSnapshotMessage("yjs 상태 포함 저장", encodedState));
+        Thread.sleep(500);
+
+        assertThat(taskService.getTask(task.id()).getDescription()).isEqualTo("yjs 상태 포함 저장");
+        assertThat(taskService.getDescriptionYjsStateBase64(owner.getId(), task.id())).isEqualTo(encodedState);
+
+        session.disconnect();
+    }
+
+    @Test
+    void snapshotWithoutYjsStateStillPersistsContentOnly() throws Exception {
+        User owner = newUser("snapshot-no-yjs-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "yjs 없는 스냅샷 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("yjs 없는 스냅샷 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+        TestTransaction.flagForCommit();
+        TestTransaction.end();
+        TestTransaction.start();
+
+        StompSession session = connectAsUser(owner);
+        subscribeToEdits(session, task.id(), "description");
+        session.send("/app/tasks/" + task.id() + "/description/edits", new TaskEditUpdateMessage("u1"));
+        Thread.sleep(300);
+
+        session.send("/app/tasks/" + task.id() + "/description/snapshot",
+                new TaskEditSnapshotMessage("yjs 상태 없는 저장", null));
+        Thread.sleep(500);
+
+        assertThat(taskService.getTask(task.id()).getDescription()).isEqualTo("yjs 상태 없는 저장");
+        assertThat(taskService.getDescriptionYjsStateBase64(owner.getId(), task.id())).isNull();
 
         session.disconnect();
     }
