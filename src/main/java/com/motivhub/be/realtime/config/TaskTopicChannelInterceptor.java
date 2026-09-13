@@ -4,6 +4,7 @@ import com.motivhub.be.auth.jwt.JwtProvider;
 import com.motivhub.be.realtime.exception.StompAuthenticationException;
 import com.motivhub.be.realtime.service.TaskEditChannelRegistry;
 import com.motivhub.be.task.domain.Task;
+import com.motivhub.be.task.service.TaskAccessPolicy;
 import com.motivhub.be.task.service.TaskService;
 import com.motivhub.be.workspace.service.WorkspaceService;
 import java.security.Principal;
@@ -38,13 +39,16 @@ public class TaskTopicChannelInterceptor implements ChannelInterceptor {
     private final WorkspaceService workspaceService;
     private final TaskService taskService;
     private final TaskEditChannelRegistry editChannelRegistry;
+    private final TaskAccessPolicy taskAccessPolicy;
 
     public TaskTopicChannelInterceptor(JwtProvider jwtProvider, WorkspaceService workspaceService,
-                                        TaskService taskService, TaskEditChannelRegistry editChannelRegistry) {
+                                        TaskService taskService, TaskEditChannelRegistry editChannelRegistry,
+                                        TaskAccessPolicy taskAccessPolicy) {
         this.jwtProvider = jwtProvider;
         this.workspaceService = workspaceService;
         this.taskService = taskService;
         this.editChannelRegistry = editChannelRegistry;
+        this.taskAccessPolicy = taskAccessPolicy;
     }
 
     @Override
@@ -99,7 +103,18 @@ public class TaskTopicChannelInterceptor implements ChannelInterceptor {
         }
         Matcher editBroadcastMatcher = EDIT_BROADCAST_TOPIC_PATTERN.matcher(destination);
         if (editBroadcastMatcher.matches()) {
-            requireTaskMembership(Long.valueOf(editBroadcastMatcher.group(1)), userId);
+            Long editTaskId = Long.valueOf(editBroadcastMatcher.group(1));
+            String field = editBroadcastMatcher.group(2);
+            Task task = taskService.getTask(editTaskId);
+            if ("description".equals(field)) {
+                // description은 REST PATCH(TaskService.updateContent)와 동일하게 OWNER 또는
+                // 담당자만 편집 가능 - 실시간 편집도 이 기준과 어긋나면 안 된다(구독은 허용해놓고
+                // 저장은 항상 거부되는 상황을 SUBSCRIBE 시점에 막는다).
+                taskAccessPolicy.requireEditPermission(task, userId);
+            } else {
+                // note는 TaskNoteService.upsert와 동일하게 워크스페이스 멤버십만 요구.
+                workspaceService.getMembership(task.getWorkspace().getId(), userId);
+            }
             // 이 구독 하나가 곧 "이 세션이 이 필드를 편집 중이다"라는 인가 근거가 된다 - SEND는
             // DB를 다시 조회하지 않고 이 사실만 확인한다(핸들send 참고).
             editChannelRegistry.authorize(accessor.getSessionId(), destination);

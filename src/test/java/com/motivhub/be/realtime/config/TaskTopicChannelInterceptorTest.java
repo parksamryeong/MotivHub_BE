@@ -16,6 +16,7 @@ import com.motivhub.be.user.domain.User;
 import com.motivhub.be.user.repository.UserRepository;
 import com.motivhub.be.workspace.dto.WorkspaceResponse;
 import com.motivhub.be.workspace.exception.NotWorkspaceMemberException;
+import com.motivhub.be.workspace.repository.WorkspaceMemberRepository;
 import com.motivhub.be.workspace.service.WorkspaceService;
 import java.time.LocalDate;
 import java.util.List;
@@ -35,6 +36,7 @@ class TaskTopicChannelInterceptorTest extends AbstractIntegrationTest {
     @Autowired private WorkspaceService workspaceService;
     @Autowired private TaskService taskService;
     @Autowired private UserRepository userRepository;
+    @Autowired private WorkspaceMemberRepository workspaceMemberRepository;
 
     private User newUser(String suffix) {
         return userRepository.save(User.create(
@@ -393,5 +395,58 @@ class TaskTopicChannelInterceptorTest extends AbstractIntegrationTest {
 
         assertThatThrownBy(() -> interceptor.preSend(message, null))
                 .isInstanceOf(StompAuthenticationException.class);
+    }
+
+    @Test
+    void memberWithoutAssigneeCannotSubscribeToDescriptionEditTopic() {
+        User owner = newUser("desc-edit-perm-owner");
+        User plainMember = newUser("desc-edit-perm-member");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "설명 편집 권한 워크스페이스");
+        workspaceMemberRepository.save(com.motivhub.be.workspace.domain.WorkspaceMember.create(
+                workspaceService.getWorkspace(workspace.id()), plainMember,
+                com.motivhub.be.workspace.domain.WorkspaceRole.MEMBER));
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("설명 편집 권한 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        Message<byte[]> message = subscribeMessage(
+                "/topic/tasks/" + task.id() + "/description/edits", plainMember.getId());
+
+        assertThatThrownBy(() -> interceptor.preSend(message, null))
+                .isInstanceOf(com.motivhub.be.task.exception.TaskEditForbiddenException.class);
+    }
+
+    @Test
+    void assigneeCanSubscribeToDescriptionEditTopicWithoutBeingOwner() {
+        User owner = newUser("desc-edit-assignee-owner");
+        User assignee = newUser("desc-edit-assignee-member");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "설명 편집 담당자 워크스페이스");
+        workspaceMemberRepository.save(com.motivhub.be.workspace.domain.WorkspaceMember.create(
+                workspaceService.getWorkspace(workspace.id()), assignee,
+                com.motivhub.be.workspace.domain.WorkspaceRole.MEMBER));
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("설명 편집 담당자 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+        taskService.addAssignee(owner.getId(), task.id(), assignee.getId());
+
+        Message<byte[]> message = subscribeMessage(
+                "/topic/tasks/" + task.id() + "/description/edits", assignee.getId());
+
+        assertThatCode(() -> interceptor.preSend(message, null)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void plainMemberCanSubscribeToNoteEditTopicWithoutEditPermission() {
+        User owner = newUser("note-edit-perm-owner");
+        User plainMember = newUser("note-edit-perm-member");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "노트 편집 권한 워크스페이스");
+        workspaceMemberRepository.save(com.motivhub.be.workspace.domain.WorkspaceMember.create(
+                workspaceService.getWorkspace(workspace.id()), plainMember,
+                com.motivhub.be.workspace.domain.WorkspaceRole.MEMBER));
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("노트 편집 권한 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        Message<byte[]> message = subscribeMessage(
+                "/topic/tasks/" + task.id() + "/note/edits", plainMember.getId());
+
+        assertThatCode(() -> interceptor.preSend(message, null)).doesNotThrowAnyException();
     }
 }
