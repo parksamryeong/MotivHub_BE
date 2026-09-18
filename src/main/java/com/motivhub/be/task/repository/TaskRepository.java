@@ -20,4 +20,10 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
     @Query("SELECT new com.motivhub.be.task.repository.TaskStatusCount(t.workspace.id, t.status, COUNT(t)) "
             + "FROM Task t WHERE t.workspace.id IN :workspaceIds GROUP BY t.workspace.id, t.status")
     List<TaskStatusCount> countByWorkspaceIdsGroupByStatus(@Param("workspaceIds") List<Long> workspaceIds);
+
+    @Query("SELECT t FROM Task t JOIN FETCH t.workspace WHERE t.status <> :excludedStatus AND EXISTS "
+            + "(SELECT 1 FROM TaskAssignee ta WHERE ta.task = t AND ta.user.id = :userId) "
+            + "ORDER BY t.dueDate ASC")
+    List<Task> findAssignedToUserExcludingStatus(
+            @Param("userId") Long userId, @Param("excludedStatus") TaskStatus excludedStatus);
 }

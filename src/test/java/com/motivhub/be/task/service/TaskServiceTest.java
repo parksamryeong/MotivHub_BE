@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.motivhub.be.support.AbstractIntegrationTest;
 import com.motivhub.be.task.domain.TaskActivityAction;
 import com.motivhub.be.task.domain.TaskActivityLog;
+import com.motivhub.be.task.dto.MyTaskResponse;
 import com.motivhub.be.task.dto.TaskCreateRequest;
 import com.motivhub.be.task.dto.TaskResponse;
 import com.motivhub.be.task.domain.TaskStatus;
@@ -15,6 +16,7 @@ import com.motivhub.be.task.exception.TaskEditForbiddenException;
 import com.motivhub.be.task.exception.TaskNotFoundException;
 import com.motivhub.be.task.exception.TaskPeriodEditForbiddenException;
 import com.motivhub.be.task.domain.TaskComment;
+import com.motivhub.be.task.service.TaskCommentService;
 import com.motivhub.be.task.repository.TaskActivityLogRepository;
 import com.motivhub.be.task.repository.TaskAssigneeRepository;
 import com.motivhub.be.task.repository.TaskChecklistItemRepository;
@@ -51,6 +53,7 @@ class TaskServiceTest extends AbstractIntegrationTest {
     @Autowired private TaskCommentRepository taskCommentRepository;
     @Autowired private TaskActivityLogRepository taskActivityLogRepository;
     @Autowired private TaskExpirationScheduler taskExpirationScheduler;
+    @Autowired private TaskCommentService taskCommentService;
     @Autowired private NotificationService notificationService;
 
     private User newUser(String suffix) {
@@ -575,5 +578,132 @@ class TaskServiceTest extends AbstractIntegrationTest {
 
         assertThatThrownBy(() -> taskService.getDescriptionYjsStateBase64(plainMember.getId(), task.id()))
                 .isInstanceOf(com.motivhub.be.task.exception.TaskEditForbiddenException.class);
+    }
+
+    @Test
+    void listMineReturnsTasksAssignedToUserAcrossWorkspaces() {
+        User user = newUser("mine-cross-1");
+        WorkspaceResponse workspaceA = workspaceService.create(user.getId(), "내할일 워크스페이스A");
+        WorkspaceResponse workspaceB = workspaceService.create(user.getId(), "내할일 워크스페이스B");
+        taskService.create(user.getId(), workspaceA.id(),
+                new TaskCreateRequest("A 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of(user.getId())));
+        taskService.create(user.getId(), workspaceB.id(),
+                new TaskCreateRequest("B 태스크", null, LocalDate.now(), LocalDate.now().plusDays(2), List.of(user.getId())));
+
+        List<MyTaskResponse> result = taskService.listMine(user.getId());
+
+        assertThat(result).extracting(MyTaskResponse::name).containsExactlyInAnyOrder("A 태스크", "B 태스크");
+    }
+
+    @Test
+    void listMineExcludesTasksNotAssignedToUser() {
+        User owner = newUser("mine-excl-owner");
+        User bystander = newUser("mine-excl-bystander");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "내할일 비담당 워크스페이스");
+        joinAsMember(workspace.id(), bystander);
+        taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("담당자 없는 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+
+        List<MyTaskResponse> result = taskService.listMine(bystander.getId());
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void listMineExcludesDoneTasks() {
+        User user = newUser("mine-done");
+        WorkspaceResponse workspace = workspaceService.create(user.getId(), "내할일 완료제외 워크스페이스");
+        TaskResponse task = taskService.create(user.getId(), workspace.id(),
+                new TaskCreateRequest("완료될 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of(user.getId())));
+        taskService.changeStatus(user.getId(), task.id(), TaskStatus.DONE);
+
+        List<MyTaskResponse> result = taskService.listMine(user.getId());
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void listMineIncludesExpiredTasks() {
+        User user = newUser("mine-expired");
+        WorkspaceResponse workspace = workspaceService.create(user.getId(), "내할일 지연 워크스페이스");
+        taskService.create(user.getId(), workspace.id(),
+                new TaskCreateRequest("지연될 태스크", null, LocalDate.now().minusDays(5), LocalDate.now().minusDays(1),
+                        List.of(user.getId())));
+        taskExpirationScheduler.expireOverdueTasks();
+
+        List<MyTaskResponse> result = taskService.listMine(user.getId());
+
+        assertThat(result).extracting(MyTaskResponse::status).containsExactly(TaskStatus.EXPIRED);
+    }
+
+    @Test
+    void listMineIncludesChecklistProgress() {
+        User user = newUser("mine-checklist");
+        WorkspaceResponse workspace = workspaceService.create(user.getId(), "내할일 체크리스트 워크스페이스");
+        TaskResponse task = taskService.create(user.getId(), workspace.id(),
+                new TaskCreateRequest("체크리스트 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of(user.getId())));
+        var item1 = taskChecklistItemService.create(user.getId(), task.id(), "항목1");
+        taskChecklistItemService.create(user.getId(), task.id(), "항목2");
+        taskChecklistItemService.update(user.getId(), task.id(), item1.id(), null, true);
+
+        List<MyTaskResponse> result = taskService.listMine(user.getId());
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).checklistTotal()).isEqualTo(2L);
+        assertThat(result.get(0).checklistCompleted()).isEqualTo(1L);
+    }
+
+    @Test
+    void listMineReturnsZeroChecklistProgressWhenNoChecklistItems() {
+        User user = newUser("mine-no-checklist");
+        WorkspaceResponse workspace = workspaceService.create(user.getId(), "내할일 체크리스트없음 워크스페이스");
+        taskService.create(user.getId(), workspace.id(),
+                new TaskCreateRequest("체크리스트 없는 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of(user.getId())));
+
+        List<MyTaskResponse> result = taskService.listMine(user.getId());
+
+        assertThat(result.get(0).checklistTotal()).isZero();
+        assertThat(result.get(0).checklistCompleted()).isZero();
+    }
+
+    @Test
+    void listMineIndicatesHasCommentsCorrectly() {
+        User user = newUser("mine-comments");
+        WorkspaceResponse workspace = workspaceService.create(user.getId(), "내할일 댓글 워크스페이스");
+        TaskResponse withComment = taskService.create(user.getId(), workspace.id(),
+                new TaskCreateRequest("댓글 있는 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of(user.getId())));
+        TaskResponse withoutComment = taskService.create(user.getId(), workspace.id(),
+                new TaskCreateRequest("댓글 없는 태스크", null, LocalDate.now(), LocalDate.now().plusDays(2), List.of(user.getId())));
+        taskCommentService.create(user.getId(), withComment.id(), "댓글 내용");
+
+        List<MyTaskResponse> result = taskService.listMine(user.getId());
+
+        assertThat(result).filteredOn(r -> r.taskId().equals(withComment.id()))
+                .extracting(MyTaskResponse::hasComments).containsExactly(true);
+        assertThat(result).filteredOn(r -> r.taskId().equals(withoutComment.id()))
+                .extracting(MyTaskResponse::hasComments).containsExactly(false);
+    }
+
+    @Test
+    void listMineSortsByDueDateAscending() {
+        User user = newUser("mine-sort");
+        WorkspaceResponse workspace = workspaceService.create(user.getId(), "내할일 정렬 워크스페이스");
+        taskService.create(user.getId(), workspace.id(),
+                new TaskCreateRequest("나중 마감", null, LocalDate.now(), LocalDate.now().plusDays(10), List.of(user.getId())));
+        taskService.create(user.getId(), workspace.id(),
+                new TaskCreateRequest("먼저 마감", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of(user.getId())));
+
+        List<MyTaskResponse> result = taskService.listMine(user.getId());
+
+        assertThat(result).extracting(MyTaskResponse::name).containsExactly("먼저 마감", "나중 마감");
+    }
+
+    @Test
+    void listMineReturnsEmptyListForUserWithNoAssignments() {
+        User user = newUser("mine-empty");
+
+        List<MyTaskResponse> result = taskService.listMine(user.getId());
+
+        assertThat(result).isEmpty();
     }
 }
