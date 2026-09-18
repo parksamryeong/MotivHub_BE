@@ -1,5 +1,6 @@
 package com.motivhub.be.task.controller;
 
+import com.motivhub.be.task.dto.MyTaskResponse;
 import com.motivhub.be.task.dto.TaskActivityLogResponse;
 import com.motivhub.be.task.dto.TaskAssigneeRequest;
 import com.motivhub.be.task.dto.TaskChecklistItemResponse;
@@ -109,5 +110,10 @@ public class TaskController {
     public ResponseEntity<TaskYjsStateResponse> getDescriptionYjsState(
             @AuthenticationPrincipal Long userId, @PathVariable Long id) {
         return ResponseEntity.ok(new TaskYjsStateResponse(taskService.getDescriptionYjsStateBase64(userId, id)));
+    }
+
+    @GetMapping("/api/tasks/mine")
+    public ResponseEntity<List<MyTaskResponse>> listMine(@AuthenticationPrincipal Long userId) {
+        return ResponseEntity.ok(taskService.listMine(userId));
     }
 }

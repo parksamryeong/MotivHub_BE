@@ -223,4 +223,37 @@ class TaskControllerTest extends AbstractIntegrationTest {
                         .header("Authorization", "Bearer " + tokenFor(plainMember)))
                 .andExpect(status().isForbidden());
     }
+
+    @Test
+    void listMineReturnsTasksAssignedToCallerViaApi() throws Exception {
+        User user = newUser("ctrl-mine-1");
+        WorkspaceResponse workspace = workspaceService.create(user.getId(), "내할일 API 워크스페이스");
+
+        mockMvc.perform(post("/api/workspaces/{id}/tasks", workspace.id())
+                        .header("Authorization", "Bearer " + tokenFor(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new TaskCreateRequest(
+                                "API 내할일 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1),
+                                List.of(user.getId())))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/tasks/mine")
+                        .header("Authorization", "Bearer " + tokenFor(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].name").value("API 내할일 태스크"))
+                .andExpect(jsonPath("$[0].workspaceId").value(workspace.id()))
+                .andExpect(jsonPath("$[0].checklistTotal").value(0))
+                .andExpect(jsonPath("$[0].hasComments").value(false));
+    }
+
+    @Test
+    void listMineReturnsEmptyArrayWhenNoAssignmentsViaApi() throws Exception {
+        User user = newUser("ctrl-mine-empty");
+
+        mockMvc.perform(get("/api/tasks/mine")
+                        .header("Authorization", "Bearer " + tokenFor(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+    }
 }

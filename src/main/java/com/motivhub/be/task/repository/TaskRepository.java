@@ -21,9 +21,11 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
             + "FROM Task t WHERE t.workspace.id IN :workspaceIds GROUP BY t.workspace.id, t.status")
     List<TaskStatusCount> countByWorkspaceIdsGroupByStatus(@Param("workspaceIds") List<Long> workspaceIds);
 
-    @Query("SELECT t FROM Task t JOIN FETCH t.workspace WHERE t.status <> :excludedStatus AND EXISTS "
-            + "(SELECT 1 FROM TaskAssignee ta WHERE ta.task = t AND ta.user.id = :userId) "
-            + "ORDER BY t.dueDate ASC")
+    @Query("SELECT t FROM Task t JOIN FETCH t.workspace w "
+            + "WHERE t.status <> :excludedStatus AND w.deletedAt IS NULL "
+            + "AND EXISTS (SELECT 1 FROM TaskAssignee ta WHERE ta.task = t AND ta.user.id = :userId) "
+            + "AND EXISTS (SELECT 1 FROM WorkspaceMember wm WHERE wm.workspace = w AND wm.user.id = :userId) "
+            + "ORDER BY t.dueDate ASC, t.id ASC")
     List<Task> findAssignedToUserExcludingStatus(
             @Param("userId") Long userId, @Param("excludedStatus") TaskStatus excludedStatus);
 }
