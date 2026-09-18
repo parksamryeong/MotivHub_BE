@@ -19,4 +19,9 @@ public interface TaskChecklistItemRepository extends JpaRepository<TaskChecklist
     long countByTaskId(Long taskId);
 
     long countByTaskIdAndDoneFalse(Long taskId);
+
+    @Query("SELECT new com.motivhub.be.task.repository.TaskChecklistProgress(tci.task.id, COUNT(tci), "
+            + "SUM(CASE WHEN tci.done = true THEN 1L ELSE 0L END)) "
+            + "FROM TaskChecklistItem tci WHERE tci.task.id IN :taskIds GROUP BY tci.task.id")
+    List<TaskChecklistProgress> countProgressByTaskIdIn(@Param("taskIds") List<Long> taskIds);
 }

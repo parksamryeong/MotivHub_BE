@@ -12,4 +12,7 @@ public interface TaskCommentRepository extends JpaRepository<TaskComment, Long> 
     List<TaskComment> findByTaskIdOrderByCreatedAtAsc(@Param("taskId") Long taskId);
 
     void deleteByTaskId(Long taskId);
+
+    @Query("SELECT DISTINCT tc.task.id FROM TaskComment tc WHERE tc.task.id IN :taskIds")
+    List<Long> findTaskIdsWithCommentsByTaskIdIn(@Param("taskIds") List<Long> taskIds);
 }

@@ -3,8 +3,10 @@ package com.motivhub.be.task.service;
 import com.motivhub.be.file.repository.WorkspaceFileRepository;
 import com.motivhub.be.task.domain.Task;
 import com.motivhub.be.task.domain.TaskActivityAction;
+import com.motivhub.be.task.dto.MyTaskResponse;
 import com.motivhub.be.task.dto.TaskCreateRequest;
 import com.motivhub.be.task.dto.TaskResponse;
+import com.motivhub.be.task.repository.TaskChecklistProgress;
 import com.motivhub.be.task.exception.TaskEditForbiddenException;
 import com.motivhub.be.task.exception.TaskNotFoundException;
 import com.motivhub.be.task.exception.TaskPeriodEditForbiddenException;
@@ -30,9 +32,12 @@ import com.motivhub.be.workspace.exception.NotWorkspaceOwnerException;
 import com.motivhub.be.workspace.service.WorkspaceService;
 import java.time.LocalDate;
 import java.util.Base64;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -260,6 +265,35 @@ public class TaskService {
                     eventPublisher.publishEvent(new TaskChangedEvent(taskId, task.getWorkspace().getId(), TaskChangeType.UPDATED));
                 });
         return TaskResponse.of(task, getAssigneeSummaries(taskId));
+    }
+
+    public List<MyTaskResponse> listMine(Long userId) {
+        List<Task> tasks = taskRepository.findAssignedToUserExcludingStatus(userId, TaskStatus.DONE);
+        List<Long> taskIds = tasks.stream().map(Task::getId).toList();
+        Map<Long, TaskChecklistProgress> progressByTaskId = checklistProgressByTaskId(taskIds);
+        Set<Long> taskIdsWithComments = taskIds.isEmpty()
+                ? Set.of()
+                : new HashSet<>(taskCommentRepository.findTaskIdsWithCommentsByTaskIdIn(taskIds));
+        return tasks.stream()
+                .map(task -> {
+                    TaskChecklistProgress progress = progressByTaskId.get(task.getId());
+                    long total = progress == null ? 0L : progress.total();
+                    long completed = progress == null ? 0L : progress.completed();
+                    return MyTaskResponse.of(task, total, completed, taskIdsWithComments.contains(task.getId()));
+                })
+                .toList();
+    }
+
+    // 태스크마다 개별 쿼리를 날리지 않고, 한 번의 집계 쿼리로 전부 가져온 뒤 메모리에서 조합한다(N+1 방지).
+    private Map<Long, TaskChecklistProgress> checklistProgressByTaskId(List<Long> taskIds) {
+        if (taskIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, TaskChecklistProgress> result = new HashMap<>();
+        for (TaskChecklistProgress row : taskChecklistItemRepository.countProgressByTaskIdIn(taskIds)) {
+            result.put(row.taskId(), row);
+        }
+        return result;
     }
 
 }
