@@ -2,7 +2,7 @@ name: motivhub-prod
 
 services:
   app:
-    build: .
+    image: sgrit78/motivhub-be:latest
     container_name: motivhub-prod-app
     restart: unless-stopped
     ports:
