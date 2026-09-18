@@ -66,7 +66,19 @@ public class SecurityConfig {
         configuration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
         configuration.setAllowCredentials(false);
 
+        // SockJS는 연결 전 GET /ws/info 핸드셰이크에서 라이브러리 차원에서 강제로
+        // withCredentials=true를 실어 보낸다(프론트에서 끌 수 있는 옵션이 없음). 이 요청이
+        // 전역 CORS 설정(allowCredentials=false)에 걸려 매번 CORS 에러가 나서, /ws 경로만
+        // 별도로 credentials를 허용한다. 이 앱은 쿠키 인증을 쓰지 않으므로(JWT는 STOMP CONNECT
+        // 헤더로 전달) 보안 영향은 없다.
+        CorsConfiguration wsConfiguration = new CorsConfiguration();
+        wsConfiguration.setAllowedOrigins(List.of(frontendUrl));
+        wsConfiguration.setAllowedMethods(List.of("GET", "POST", "OPTIONS"));
+        wsConfiguration.setAllowedHeaders(List.of("*"));
+        wsConfiguration.setAllowCredentials(true);
+
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/ws/**", wsConfiguration);
         source.registerCorsConfiguration("/**", configuration);
         return source;
     }
