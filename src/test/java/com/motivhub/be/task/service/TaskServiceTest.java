@@ -706,4 +706,38 @@ class TaskServiceTest extends AbstractIntegrationTest {
 
         assertThat(result).isEmpty();
     }
+
+    @Test
+    void listMineExcludesTasksInWorkspacesTheUserLeft() {
+        User owner = createUniqueUser("mine-kicked-owner");
+        User assignee = createUniqueUser("mine-kicked-assignee");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "내할일 강퇴 워크스페이스");
+        joinAsMember(workspace.id(), assignee);
+        taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("강퇴 전 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1),
+                        List.of(assignee.getId())));
+
+        workspaceService.kick(owner.getId(), workspace.id(), assignee.getId());
+
+        List<MyTaskResponse> result = taskService.listMine(assignee.getId());
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void listMineExcludesTasksFromDeletedWorkspaces() {
+        User owner = createUniqueUser("mine-deleted-ws-owner");
+        User assignee = createUniqueUser("mine-deleted-ws-assignee");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "내할일 삭제됨 워크스페이스");
+        joinAsMember(workspace.id(), assignee);
+        taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("삭제된 워크스페이스 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1),
+                        List.of(assignee.getId())));
+
+        workspaceService.delete(owner.getId(), workspace.id());
+
+        List<MyTaskResponse> result = taskService.listMine(assignee.getId());
+
+        assertThat(result).isEmpty();
+    }
 }
