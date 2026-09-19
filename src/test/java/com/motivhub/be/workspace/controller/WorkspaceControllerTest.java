@@ -128,4 +128,18 @@ class WorkspaceControllerTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.members[0].user.nickname").value(owner.getNickname()))
                 .andExpect(jsonPath("$.members[0].role").value("OWNER"));
     }
+
+    @Test
+    void getDetailReturnsTaskCountsViaApi() throws Exception {
+        User owner = newUser("c8-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "상세 통계 워크스페이스8");
+
+        mockMvc.perform(get("/api/workspaces/{id}", workspace.id())
+                        .header("Authorization", "Bearer " + tokenFor(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.taskCounts.waiting").value(0))
+                .andExpect(jsonPath("$.taskCounts.inProgress").value(0))
+                .andExpect(jsonPath("$.taskCounts.done").value(0))
+                .andExpect(jsonPath("$.taskCounts.expired").value(0));
+    }
 }

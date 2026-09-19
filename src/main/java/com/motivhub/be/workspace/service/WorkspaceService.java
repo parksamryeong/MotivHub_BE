@@ -111,7 +111,9 @@ public class WorkspaceService {
     public WorkspaceDetailResponse getDetail(Long userId, Long workspaceId) {
         WorkspaceMember member = getMembership(workspaceId, userId);
         List<WorkspaceMember> members = workspaceMemberRepository.findByWorkspaceId(workspaceId);
-        return WorkspaceDetailResponse.of(member.getWorkspace(), member.getRole(), members);
+        WorkspaceTaskCounts taskCounts = taskCountsByWorkspaceId(List.of(workspaceId))
+                .getOrDefault(workspaceId, WorkspaceTaskCounts.empty());
+        return WorkspaceDetailResponse.of(member.getWorkspace(), member.getRole(), members, taskCounts);
     }
 
     public Workspace getWorkspace(Long workspaceId) {
