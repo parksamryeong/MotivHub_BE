@@ -334,4 +334,29 @@ class WorkspaceServiceTest extends AbstractIntegrationTest {
         assertThat(detail.members()).extracting(m -> m.user().nickname())
                 .containsExactlyInAnyOrder(owner.getNickname(), member.getNickname());
     }
+
+    @Test
+    void getDetailReturnsZeroTaskCountsForWorkspaceWithNoTasks() {
+        User owner = newUser("detail-tc-empty");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "통계 없음 워크스페이스");
+
+        WorkspaceDetailResponse detail = workspaceService.getDetail(owner.getId(), workspace.id());
+
+        assertThat(detail.taskCounts()).isEqualTo(WorkspaceTaskCounts.empty());
+    }
+
+    @Test
+    void getDetailIncludesTaskCountsGroupedByStatus() {
+        User owner = newUser("detail-tc-grouped");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "통계 워크스페이스");
+        TaskResponse waiting = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("대기 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+        TaskResponse inProgress = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("진행중 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+        taskService.changeStatus(owner.getId(), inProgress.id(), TaskStatus.IN_PROGRESS);
+
+        WorkspaceDetailResponse detail = workspaceService.getDetail(owner.getId(), workspace.id());
+
+        assertThat(detail.taskCounts()).isEqualTo(new WorkspaceTaskCounts(1, 1, 0, 0));
+    }
 }
