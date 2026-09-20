@@ -7,6 +7,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.motivhub.be.support.AbstractIntegrationTest;
 import com.motivhub.be.task.domain.TaskActivityAction;
 import com.motivhub.be.task.domain.TaskActivityLog;
+import com.motivhub.be.task.domain.TaskPriority;
+import com.motivhub.be.task.dto.TaskActivityLogResponse;
+import com.motivhub.be.task.service.TaskActivityLogService;
 import com.motivhub.be.task.dto.MyTaskResponse;
 import com.motivhub.be.task.dto.TaskCreateRequest;
 import com.motivhub.be.task.dto.TaskResponse;
@@ -55,6 +58,7 @@ class TaskServiceTest extends AbstractIntegrationTest {
     @Autowired private TaskExpirationScheduler taskExpirationScheduler;
     @Autowired private TaskCommentService taskCommentService;
     @Autowired private NotificationService notificationService;
+    @Autowired private TaskActivityLogService taskActivityLogService;
 
     private User newUser(String suffix) {
         return userRepository.save(User.create(
@@ -739,5 +743,91 @@ class TaskServiceTest extends AbstractIntegrationTest {
         List<MyTaskResponse> result = taskService.listMine(assignee.getId());
 
         assertThat(result).isEmpty();
+    }
+
+    @Test
+    void creatingTaskWithExplicitPrioritySetsIt() {
+        User owner = createUniqueUser("priority-explicit-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "우선순위 명시 워크스페이스");
+
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("긴급 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1),
+                        List.of(), TaskPriority.URGENT));
+
+        assertThat(task.priority()).isEqualTo(TaskPriority.URGENT);
+    }
+
+    @Test
+    void creatingTaskWithoutPriorityDefaultsToMedium() {
+        User owner = createUniqueUser("priority-default-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "우선순위 기본값 워크스페이스");
+
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("보통 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+
+        assertThat(task.priority()).isEqualTo(TaskPriority.MEDIUM);
+    }
+
+    @Test
+    void assigneeCanUpdatePriority() {
+        User owner = createUniqueUser("priority-update-owner");
+        User assignee = createUniqueUser("priority-update-assignee");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "우선순위 수정 워크스페이스");
+        joinAsMember(workspace.id(), assignee);
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("우선순위 바뀔 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1),
+                        List.of(assignee.getId())));
+
+        TaskResponse updated = taskService.updatePriority(assignee.getId(), task.id(), TaskPriority.HIGH);
+
+        assertThat(updated.priority()).isEqualTo(TaskPriority.HIGH);
+    }
+
+    @Test
+    void nonAssigneeCannotUpdatePriority() {
+        User owner = createUniqueUser("priority-forbidden-owner");
+        User bystander = createUniqueUser("priority-forbidden-bystander");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "우선순위 권한 워크스페이스");
+        joinAsMember(workspace.id(), bystander);
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("권한 없는 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+
+        assertThatThrownBy(() -> taskService.updatePriority(bystander.getId(), task.id(), TaskPriority.URGENT))
+                .isInstanceOf(TaskEditForbiddenException.class);
+    }
+
+    @Test
+    void updatingPriorityRecordsActivityLog() {
+        User owner = createUniqueUser("priority-log-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "우선순위 로그 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("로그 남을 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+
+        taskService.updatePriority(owner.getId(), task.id(), TaskPriority.LOW);
+
+        List<TaskActivityLogResponse> logs = taskActivityLogService.list(owner.getId(), task.id());
+        assertThat(logs).extracting(TaskActivityLogResponse::action)
+                .contains(TaskActivityAction.CHANGE_PRIORITY);
+    }
+
+    @Test
+    void listMineSortsByPriorityWithinSameDueDate() {
+        User user = createUniqueUser("priority-sort-user");
+        WorkspaceResponse workspace = workspaceService.create(user.getId(), "우선순위 정렬 워크스페이스");
+        LocalDate sameDueDate = LocalDate.now().plusDays(3);
+        taskService.create(user.getId(), workspace.id(),
+                new TaskCreateRequest("낮음 태스크", null, LocalDate.now(), sameDueDate,
+                        List.of(user.getId()), TaskPriority.LOW));
+        taskService.create(user.getId(), workspace.id(),
+                new TaskCreateRequest("긴급 태스크", null, LocalDate.now(), sameDueDate,
+                        List.of(user.getId()), TaskPriority.URGENT));
+        taskService.create(user.getId(), workspace.id(),
+                new TaskCreateRequest("보통 태스크", null, LocalDate.now(), sameDueDate,
+                        List.of(user.getId()), TaskPriority.MEDIUM));
+
+        List<MyTaskResponse> result = taskService.listMine(user.getId());
+
+        assertThat(result).extracting(MyTaskResponse::name)
+                .containsExactly("긴급 태스크", "보통 태스크", "낮음 태스크");
     }
 }
