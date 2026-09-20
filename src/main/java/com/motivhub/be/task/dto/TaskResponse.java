@@ -1,6 +1,7 @@
 package com.motivhub.be.task.dto;
 
 import com.motivhub.be.task.domain.Task;
+import com.motivhub.be.task.domain.TaskPriority;
 import com.motivhub.be.task.domain.TaskStatus;
 import com.motivhub.be.user.dto.UserSummary;
 import java.time.LocalDate;
@@ -15,6 +16,7 @@ public record TaskResponse(
         LocalDate startDate,
         LocalDate dueDate,
         TaskStatus status,
+        TaskPriority priority,
         List<UserSummary> assignees,
         UserSummary createdBy,
         LocalDateTime createdAt) {
@@ -22,7 +24,7 @@ public record TaskResponse(
     public static TaskResponse of(Task task, List<UserSummary> assignees) {
         return new TaskResponse(
                 task.getId(), task.getWorkspace().getId(), task.getName(), task.getDescription(),
-                task.getStartDate(), task.getDueDate(), task.getStatus(), assignees,
+                task.getStartDate(), task.getDueDate(), task.getStatus(), task.getPriority(), assignees,
                 UserSummary.from(task.getCreatedBy()), task.getCreatedAt());
     }
 }

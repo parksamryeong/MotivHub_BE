@@ -25,7 +25,9 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
             + "WHERE t.status <> :excludedStatus AND w.deletedAt IS NULL "
             + "AND EXISTS (SELECT 1 FROM TaskAssignee ta WHERE ta.task = t AND ta.user.id = :userId) "
             + "AND EXISTS (SELECT 1 FROM WorkspaceMember wm WHERE wm.workspace = w AND wm.user.id = :userId) "
-            + "ORDER BY t.dueDate ASC, t.id ASC")
+            + "ORDER BY t.dueDate ASC, "
+            + "CASE t.priority WHEN 'URGENT' THEN 0 WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 WHEN 'LOW' THEN 3 END ASC, "
+            + "t.id ASC")
     List<Task> findAssignedToUserExcludingStatus(
             @Param("userId") Long userId, @Param("excludedStatus") TaskStatus excludedStatus);
 }

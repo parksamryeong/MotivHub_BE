@@ -3,6 +3,7 @@ package com.motivhub.be.task.service;
 import com.motivhub.be.file.repository.WorkspaceFileRepository;
 import com.motivhub.be.task.domain.Task;
 import com.motivhub.be.task.domain.TaskActivityAction;
+import com.motivhub.be.task.domain.TaskPriority;
 import com.motivhub.be.task.dto.MyTaskResponse;
 import com.motivhub.be.task.dto.TaskCreateRequest;
 import com.motivhub.be.task.dto.TaskResponse;
@@ -87,8 +88,10 @@ public class TaskService {
         Workspace workspace = membership.getWorkspace();
         User creator = userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException("유저를 찾을 수 없습니다."));
+        TaskPriority priority = request.priority() == null ? TaskPriority.MEDIUM : request.priority();
         Task task = taskRepository.save(Task.create(
-                workspace, request.name(), request.description(), request.startDate(), request.dueDate(), creator));
+                workspace, request.name(), request.description(), request.startDate(), request.dueDate(),
+                creator, priority));
         taskActivityLogService.record(task, creator, TaskActivityAction.CREATE, null, null, null);
 
         List<Long> assigneeIds = request.assigneeIds() == null ? List.of() : request.assigneeIds();
@@ -228,6 +231,22 @@ public class TaskService {
         if (oldStatus != newStatus) {
             taskActivityLogService.record(task, actor, TaskActivityAction.CHANGE_STATUS,
                     "status", oldStatus.name(), newStatus.name());
+        }
+        eventPublisher.publishEvent(new TaskChangedEvent(taskId, task.getWorkspace().getId(), TaskChangeType.UPDATED));
+        return TaskResponse.of(task, getAssigneeSummaries(taskId));
+    }
+
+    @Transactional
+    public TaskResponse updatePriority(Long userId, Long taskId, TaskPriority newPriority) {
+        Task task = getTask(taskId);
+        taskAccessPolicy.requireEditPermission(task, userId);
+        User actor = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException("유저를 찾을 수 없습니다."));
+        TaskPriority oldPriority = task.getPriority();
+        task.changePriority(newPriority);
+        if (oldPriority != newPriority) {
+            taskActivityLogService.record(task, actor, TaskActivityAction.CHANGE_PRIORITY,
+                    "priority", oldPriority.name(), newPriority.name());
         }
         eventPublisher.publishEvent(new TaskChangedEvent(taskId, task.getWorkspace().getId(), TaskChangeType.UPDATED));
         return TaskResponse.of(task, getAssigneeSummaries(taskId));

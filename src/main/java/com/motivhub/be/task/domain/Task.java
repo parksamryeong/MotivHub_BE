@@ -49,6 +49,10 @@ public class Task {
     @Column(nullable = false, length = 20)
     private TaskStatus status;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 10)
+    private TaskPriority priority;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by", nullable = false)
     private User createdBy;
@@ -60,7 +64,7 @@ public class Task {
     private byte[] descriptionYjsState;
 
     private Task(Workspace workspace, String name, String description,
-                  LocalDate startDate, LocalDate dueDate, User createdBy) {
+                  LocalDate startDate, LocalDate dueDate, User createdBy, TaskPriority priority) {
         this.workspace = workspace;
         this.name = name;
         this.description = description;
@@ -69,11 +73,12 @@ public class Task {
         this.status = TaskStatus.WAITING;
         this.createdBy = createdBy;
         this.createdAt = LocalDateTime.now();
+        this.priority = priority;
     }
 
     public static Task create(Workspace workspace, String name, String description,
-                               LocalDate startDate, LocalDate dueDate, User createdBy) {
-        return new Task(workspace, name, description, startDate, dueDate, createdBy);
+                               LocalDate startDate, LocalDate dueDate, User createdBy, TaskPriority priority) {
+        return new Task(workspace, name, description, startDate, dueDate, createdBy, priority);
     }
 
     public void updateContent(String name, String description) {
@@ -99,6 +104,10 @@ public class Task {
 
     public void expire() {
         this.status = TaskStatus.EXPIRED;
+    }
+
+    public void changePriority(TaskPriority newPriority) {
+        this.priority = newPriority;
     }
 
     public boolean isCreatedBy(Long userId) {
