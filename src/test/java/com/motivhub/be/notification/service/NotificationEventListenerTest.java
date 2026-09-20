@@ -40,8 +40,9 @@ class NotificationEventListenerTest extends AbstractIntegrationTest {
     @Autowired private WorkspaceMemberRepository workspaceMemberRepository;
 
     private User newUser(String suffix) {
+        String nickname = "user" + suffix.replace("-", "");
         return userRepository.save(User.create(
-                SocialProvider.GITHUB, "listener-test-" + suffix, suffix + "@test.com", "user_" + suffix, null));
+                SocialProvider.GITHUB, "listener-test-" + suffix, suffix + "@test.com", nickname, null));
     }
 
     private void joinAsMember(Long workspaceId, User user) {
@@ -83,7 +84,7 @@ class NotificationEventListenerTest extends AbstractIntegrationTest {
                         List.of(assignee.getId())));
 
         TestTransaction.flagForCommit();
-        eventPublisher.publishEvent(new TaskCommentCreatedEvent(task.id(), assignee.getId(), assignee.getNickname()));
+        eventPublisher.publishEvent(new TaskCommentCreatedEvent(task.id(), assignee.getId(), assignee.getNickname(), "댓글 내용"));
         TestTransaction.end();
         TestTransaction.start();
 
@@ -165,5 +166,155 @@ class NotificationEventListenerTest extends AbstractIntegrationTest {
         TestTransaction.start();
 
         assertThat(notificationService.list(owner.getId(), PageRequest.of(0, 20)).getContent()).hasSize(1);
+    }
+
+    @Test
+    void mentioningWorkspaceMemberSendsMentionedNotification() {
+        User owner = newUser("m1-owner");
+        User member = newUser("m1-member");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "멘션 워크스페이스1");
+        joinAsMember(workspace.id(), member);
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("멘션 태스크1", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        TestTransaction.flagForCommit();
+        eventPublisher.publishEvent(new TaskCommentCreatedEvent(
+                task.id(), owner.getId(), owner.getNickname(), "@" + member.getNickname() + " 확인해주세요"));
+        TestTransaction.end();
+        TestTransaction.start();
+
+        List<NotificationResponse> notifications = notificationService
+                .list(member.getId(), PageRequest.of(0, 20)).getContent();
+        assertThat(notifications).hasSize(1);
+        assertThat(notifications.get(0).type()).isEqualTo(NotificationType.MENTIONED);
+        assertThat(notifications.get(0).targetType()).isEqualTo(NotificationTargetType.TASK);
+        assertThat(notifications.get(0).targetId()).isEqualTo(task.id());
+    }
+
+    @Test
+    void mentioningNonExistentNicknameSendsNothing() {
+        User owner = newUser("m2-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "멘션 워크스페이스2");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("멘션 태스크2", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        TestTransaction.flagForCommit();
+        eventPublisher.publishEvent(new TaskCommentCreatedEvent(
+                task.id(), owner.getId(), owner.getNickname(), "@존재안하는닉네임 확인해주세요"));
+        TestTransaction.end();
+        TestTransaction.start();
+
+        assertThat(notificationService.list(owner.getId(), PageRequest.of(0, 20)).getContent()).isEmpty();
+    }
+
+    @Test
+    void mentioningNonMemberNicknameSendsNothing() {
+        User owner = newUser("m3-owner");
+        User outsider = newUser("m3-outsider");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "멘션 워크스페이스3");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("멘션 태스크3", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        TestTransaction.flagForCommit();
+        eventPublisher.publishEvent(new TaskCommentCreatedEvent(
+                task.id(), owner.getId(), owner.getNickname(), "@" + outsider.getNickname() + " 확인해주세요"));
+        TestTransaction.end();
+        TestTransaction.start();
+
+        assertThat(notificationService.list(outsider.getId(), PageRequest.of(0, 20)).getContent()).isEmpty();
+    }
+
+    @Test
+    void selfMentionSendsNothing() {
+        User owner = newUser("m4-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "멘션 워크스페이스4");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("멘션 태스크4", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        TestTransaction.flagForCommit();
+        eventPublisher.publishEvent(new TaskCommentCreatedEvent(
+                task.id(), owner.getId(), owner.getNickname(), "@" + owner.getNickname() + " 메모"));
+        TestTransaction.end();
+        TestTransaction.start();
+
+        assertThat(notificationService.list(owner.getId(), PageRequest.of(0, 20)).getContent()).isEmpty();
+    }
+
+    @Test
+    void mentioningSamePersonTwiceSendsOnlyOneNotification() {
+        User owner = newUser("m5-owner");
+        User member = newUser("m5-member");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "멘션 워크스페이스5");
+        joinAsMember(workspace.id(), member);
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("멘션 태스크5", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        TestTransaction.flagForCommit();
+        eventPublisher.publishEvent(new TaskCommentCreatedEvent(
+                task.id(), owner.getId(), owner.getNickname(),
+                "@" + member.getNickname() + " @" + member.getNickname() + " 확인해주세요"));
+        TestTransaction.end();
+        TestTransaction.start();
+
+        assertThat(notificationService.list(member.getId(), PageRequest.of(0, 20)).getContent()).hasSize(1);
+    }
+
+    @Test
+    void mentionedAssigneeReceivesBothTaskCommentAddedAndMentioned() {
+        User owner = newUser("m6-owner");
+        User assignee = newUser("m6-assignee");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "멘션 워크스페이스6");
+        joinAsMember(workspace.id(), assignee);
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("멘션 태스크6", null, LocalDate.now(), LocalDate.now().plusDays(5),
+                        List.of(assignee.getId())));
+
+        TestTransaction.flagForCommit();
+        eventPublisher.publishEvent(new TaskCommentCreatedEvent(
+                task.id(), owner.getId(), owner.getNickname(), "@" + assignee.getNickname() + " 확인해주세요"));
+        TestTransaction.end();
+        TestTransaction.start();
+
+        List<NotificationResponse> notifications = notificationService
+                .list(assignee.getId(), PageRequest.of(0, 20)).getContent();
+        assertThat(notifications).hasSize(2);
+        assertThat(notifications).extracting(NotificationResponse::type)
+                .containsExactlyInAnyOrder(NotificationType.TASK_COMMENT_ADDED, NotificationType.MENTIONED);
+    }
+
+    @Test
+    void commentWithoutMentionsSendsNoMentionedNotification() {
+        User owner = newUser("m7-owner");
+        User member = newUser("m7-member");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "멘션 워크스페이스7");
+        joinAsMember(workspace.id(), member);
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("멘션 태스크7", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        TestTransaction.flagForCommit();
+        eventPublisher.publishEvent(new TaskCommentCreatedEvent(
+                task.id(), owner.getId(), owner.getNickname(), "그냥 일반 댓글입니다"));
+        TestTransaction.end();
+        TestTransaction.start();
+
+        assertThat(notificationService.list(member.getId(), PageRequest.of(0, 20)).getContent()).isEmpty();
+    }
+
+    @Test
+    void mentioningMemberWithHonorificSuffixStillNotifies() {
+        User owner = newUser("m8-owner");
+        User member = newUser("m8-member");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "멘션 워크스페이스8");
+        joinAsMember(workspace.id(), member);
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("멘션 태스크8", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        TestTransaction.flagForCommit();
+        eventPublisher.publishEvent(new TaskCommentCreatedEvent(
+                task.id(), owner.getId(), owner.getNickname(), "@" + member.getNickname() + "님 확인해주세요"));
+        TestTransaction.end();
+        TestTransaction.start();
+
+        assertThat(notificationService.list(member.getId(), PageRequest.of(0, 20)).getContent()).hasSize(1);
     }
 }

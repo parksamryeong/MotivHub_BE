@@ -1,4 +1,4 @@
 package com.motivhub.be.task.event;
 
-public record TaskCommentCreatedEvent(Long taskId, Long authorId, String authorNickname) {
+public record TaskCommentCreatedEvent(Long taskId, Long authorId, String authorNickname, String content) {
 }

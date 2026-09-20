@@ -9,10 +9,18 @@ import com.motivhub.be.task.event.DueDateApproachingEvent;
 import com.motivhub.be.task.event.TaskCommentCreatedEvent;
 import com.motivhub.be.task.repository.TaskAssigneeRepository;
 import com.motivhub.be.task.service.TaskService;
+import com.motivhub.be.user.domain.User;
+import com.motivhub.be.user.repository.UserRepository;
 import com.motivhub.be.workspace.domain.WorkspaceRole;
 import com.motivhub.be.workspace.repository.WorkspaceMemberRepository;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -23,19 +31,26 @@ import org.springframework.transaction.event.TransactionalEventListener;
 public class NotificationEventListener {
 
     private static final Logger log = LoggerFactory.getLogger(NotificationEventListener.class);
+    private static final Pattern MENTION_PATTERN = Pattern.compile("(?<![가-힣a-zA-Z0-9])@([가-힣a-zA-Z0-9]{2,15})");
+    private static final List<String> TRAILING_PARTICLES = List.of(
+            "님께", "님은", "님이", "님을", "한테", "에게", "님",
+            "께", "이", "가", "은", "는", "을", "를", "아", "야", "씨");
 
     private final NotificationService notificationService;
     private final TaskService taskService;
     private final TaskAssigneeRepository taskAssigneeRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
+    private final UserRepository userRepository;
 
     public NotificationEventListener(NotificationService notificationService, TaskService taskService,
                                       TaskAssigneeRepository taskAssigneeRepository,
-                                      WorkspaceMemberRepository workspaceMemberRepository) {
+                                      WorkspaceMemberRepository workspaceMemberRepository,
+                                      UserRepository userRepository) {
         this.notificationService = notificationService;
         this.taskService = taskService;
         this.taskAssigneeRepository = taskAssigneeRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
+        this.userRepository = userRepository;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -59,6 +74,12 @@ public class NotificationEventListener {
             for (Long recipientId : recipientIds) {
                 notifySafely(recipientId, NotificationType.TASK_COMMENT_ADDED,
                         NotificationTargetType.TASK, task.getId(), message);
+            }
+
+            String mentionMessage = "'" + event.authorNickname() + "'님이 '" + task.getName() + "' 댓글에서 회원님을 언급했습니다.";
+            for (Long mentionedUserId : mentionedWorkspaceMemberIds(event.content(), task, event.authorId())) {
+                notifySafely(mentionedUserId, NotificationType.MENTIONED,
+                        NotificationTargetType.TASK, task.getId(), mentionMessage);
             }
         });
     }
@@ -113,5 +134,68 @@ public class NotificationEventListener {
         Set<Long> ids = new HashSet<>();
         taskAssigneeRepository.findByTaskId(taskId).forEach(assignee -> ids.add(assignee.getUser().getId()));
         return ids;
+    }
+
+    // 댓글 내용에서 @닉네임을 추출해, 그 워크스페이스의 멤버이면서 작성자 본인이 아닌 유저 ID만 남긴다.
+    // 존재하지 않는 닉네임/비멤버/자기 자신 멘션은 이 필터를 거치면서 조용히 제외된다.
+    private Set<Long> mentionedWorkspaceMemberIds(String content, Task task, Long authorId) {
+        Set<String> capturedTokens = new HashSet<>();
+        Matcher matcher = MENTION_PATTERN.matcher(content);
+        while (matcher.find()) {
+            capturedTokens.add(matcher.group(1));
+        }
+        if (capturedTokens.isEmpty()) {
+            return Set.of();
+        }
+
+        Set<String> candidateNicknames = new HashSet<>();
+        for (String token : capturedTokens) {
+            candidateNicknames.add(token);
+            for (String particle : TRAILING_PARTICLES) {
+                if (token.length() > particle.length() && token.endsWith(particle)) {
+                    candidateNicknames.add(token.substring(0, token.length() - particle.length()));
+                }
+            }
+        }
+
+        Map<String, User> userByNickname = new HashMap<>();
+        for (User user : userRepository.findByNicknameIn(new ArrayList<>(candidateNicknames))) {
+            userByNickname.put(user.getNickname(), user);
+        }
+
+        Set<Long> memberUserIds = new HashSet<>();
+        workspaceMemberRepository.findByWorkspaceId(task.getWorkspace().getId())
+                .forEach(member -> memberUserIds.add(member.getUser().getId()));
+
+        Set<Long> result = new HashSet<>();
+        for (String token : capturedTokens) {
+            User resolved = resolveLongestMatch(token, userByNickname);
+            if (resolved != null && memberUserIds.contains(resolved.getId()) && !resolved.getId().equals(authorId)) {
+                result.add(resolved.getId());
+            }
+        }
+        return result;
+    }
+
+    // "철수님"처럼 캡처된 문자열 뒤에 존칭/조사가 붙어있으면 떼어내고 실제 존재하는 닉네임을 찾는다.
+    // 캡처된 문자열 자체가 실제 닉네임이면 그걸 우선한다(존칭을 잘못 떼어낸 더 짧은 후보로 넘어가지 않도록).
+    // 닉네임 조회는 DB collation(utf8mb4_0900_ai_ci, 대소문자 구분 없음)을 그대로 따른다 - @JCHUL이
+    // jchul을 찾는 건 의도된 동작이다.
+    private User resolveLongestMatch(String captured, Map<String, User> userByNickname) {
+        User exact = userByNickname.get(captured);
+        if (exact != null) {
+            return exact;
+        }
+        User bestMatch = null;
+        for (String particle : TRAILING_PARTICLES) {
+            if (captured.length() > particle.length() && captured.endsWith(particle)) {
+                String candidate = captured.substring(0, captured.length() - particle.length());
+                User user = userByNickname.get(candidate);
+                if (user != null && (bestMatch == null || candidate.length() > bestMatch.getNickname().length())) {
+                    bestMatch = user;
+                }
+            }
+        }
+        return bestMatch;
     }
 }
