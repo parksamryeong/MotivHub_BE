@@ -11,10 +11,12 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.motivhub.be.auth.jwt.JwtProvider;
 import com.motivhub.be.support.AbstractIntegrationTest;
+import com.motivhub.be.task.domain.TaskPriority;
 import com.motivhub.be.task.domain.TaskStatus;
 import com.motivhub.be.task.dto.TaskChecklistItemCreateRequest;
 import com.motivhub.be.task.dto.TaskCreateRequest;
 import com.motivhub.be.task.dto.TaskPeriodUpdateRequest;
+import com.motivhub.be.task.dto.TaskPriorityUpdateRequest;
 import com.motivhub.be.task.dto.TaskResponse;
 import com.motivhub.be.task.dto.TaskStatusUpdateRequest;
 import com.motivhub.be.task.service.TaskService;
@@ -177,7 +179,8 @@ class TaskControllerTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.checklistItems.length()").value(1))
                 .andExpect(jsonPath("$.checklistItems[0].content").value("상세 확인용 항목"))
-                .andExpect(jsonPath("$.checklistItems[0].isDone").value(false));
+                .andExpect(jsonPath("$.checklistItems[0].isDone").value(false))
+                .andExpect(jsonPath("$.priority").value("MEDIUM"));
     }
 
     @Test
@@ -255,5 +258,62 @@ class TaskControllerTest extends AbstractIntegrationTest {
                         .header("Authorization", "Bearer " + tokenFor(user)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
+    void createdTaskDefaultsToMediumPriorityViaApi() throws Exception {
+        User owner = newUser("prio-default");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "우선순위 기본값 API 워크스페이스");
+
+        mockMvc.perform(post("/api/workspaces/{id}/tasks", workspace.id())
+                        .header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new TaskCreateRequest("기본 우선순위 태스크", null, LocalDate.now(),
+                                        LocalDate.now().plusDays(1), List.of()))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.priority").value("MEDIUM"));
+    }
+
+    @Test
+    void changePriorityUpdatesItViaApi() throws Exception {
+        User owner = newUser("prio-change");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "우선순위 변경 API 워크스페이스");
+        String createResponse = mockMvc.perform(post("/api/workspaces/{id}/tasks", workspace.id())
+                        .header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new TaskCreateRequest("우선순위 변경 태스크", null, LocalDate.now(),
+                                        LocalDate.now().plusDays(1), List.of()))))
+                .andReturn().getResponse().getContentAsString();
+        Long taskId = objectMapper.readTree(createResponse).get("id").asLong();
+
+        mockMvc.perform(patch("/api/tasks/{id}/priority", taskId)
+                        .header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new TaskPriorityUpdateRequest(TaskPriority.URGENT))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.priority").value("URGENT"));
+    }
+
+    @Test
+    void nonMemberCannotChangePriorityViaApiReturns403() throws Exception {
+        User owner = newUser("prio-forbidden-owner");
+        User outsider = newUser("prio-forbidden-outsider");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "우선순위 권한 API 워크스페이스");
+        String createResponse = mockMvc.perform(post("/api/workspaces/{id}/tasks", workspace.id())
+                        .header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new TaskCreateRequest("권한 확인 태스크", null, LocalDate.now(),
+                                        LocalDate.now().plusDays(1), List.of()))))
+                .andReturn().getResponse().getContentAsString();
+        Long taskId = objectMapper.readTree(createResponse).get("id").asLong();
+
+        mockMvc.perform(patch("/api/tasks/{id}/priority", taskId)
+                        .header("Authorization", "Bearer " + tokenFor(outsider))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new TaskPriorityUpdateRequest(TaskPriority.HIGH))))
+                .andExpect(status().isForbidden());
     }
 }

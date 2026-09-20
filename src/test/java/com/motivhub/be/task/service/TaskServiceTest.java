@@ -830,4 +830,22 @@ class TaskServiceTest extends AbstractIntegrationTest {
         assertThat(result).extracting(MyTaskResponse::name)
                 .containsExactly("긴급 태스크", "보통 태스크", "낮음 태스크");
     }
+
+    @Test
+    void changedPrioritySurfacesInListMineAfterUpdate() {
+        User user = createUniqueUser("priority-roundtrip-user");
+        WorkspaceResponse workspace = workspaceService.create(user.getId(), "우선순위 왕복 워크스페이스");
+        TaskResponse lowTask = taskService.create(user.getId(), workspace.id(),
+                new TaskCreateRequest("낮음으로 시작한 태스크", null, LocalDate.now(), LocalDate.now().plusDays(3),
+                        List.of(user.getId()), TaskPriority.LOW));
+        TaskResponse mediumTask = taskService.create(user.getId(), workspace.id(),
+                new TaskCreateRequest("보통 태스크", null, LocalDate.now(), LocalDate.now().plusDays(3),
+                        List.of(user.getId()), TaskPriority.MEDIUM));
+
+        taskService.updatePriority(user.getId(), lowTask.id(), TaskPriority.URGENT);
+
+        List<MyTaskResponse> result = taskService.listMine(user.getId());
+
+        assertThat(result).extracting(MyTaskResponse::name).containsExactly("낮음으로 시작한 태스크", "보통 태스크");
+    }
 }
