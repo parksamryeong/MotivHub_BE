@@ -8,6 +8,7 @@ import com.motivhub.be.task.dto.TaskContentUpdateRequest;
 import com.motivhub.be.task.dto.TaskCreateRequest;
 import com.motivhub.be.task.dto.TaskDetailResponse;
 import com.motivhub.be.task.dto.TaskPeriodUpdateRequest;
+import com.motivhub.be.task.dto.TaskPriorityUpdateRequest;
 import com.motivhub.be.task.dto.TaskResponse;
 import com.motivhub.be.task.dto.TaskStatusUpdateRequest;
 import com.motivhub.be.task.dto.TaskYjsStateResponse;
@@ -79,6 +80,13 @@ public class TaskController {
             @AuthenticationPrincipal Long userId, @PathVariable Long id,
             @Valid @RequestBody TaskStatusUpdateRequest request) {
         return ResponseEntity.ok(taskService.changeStatus(userId, id, request.status()));
+    }
+
+    @PatchMapping("/api/tasks/{id}/priority")
+    public ResponseEntity<TaskResponse> changePriority(
+            @AuthenticationPrincipal Long userId, @PathVariable Long id,
+            @Valid @RequestBody TaskPriorityUpdateRequest request) {
+        return ResponseEntity.ok(taskService.updatePriority(userId, id, request.priority()));
     }
 
     @DeleteMapping("/api/tasks/{id}")
