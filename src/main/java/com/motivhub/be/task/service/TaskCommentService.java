@@ -48,7 +48,7 @@ public class TaskCommentService {
         User author = userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException("유저를 찾을 수 없습니다."));
         TaskComment comment = taskCommentRepository.save(TaskComment.create(task, author, content));
-        eventPublisher.publishEvent(new TaskCommentCreatedEvent(taskId, userId, author.getNickname()));
+        eventPublisher.publishEvent(new TaskCommentCreatedEvent(taskId, userId, author.getNickname(), content));
         return TaskCommentResponse.from(comment);
     }
 
