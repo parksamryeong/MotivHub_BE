@@ -63,6 +63,9 @@ public class Task {
     @Column(name = "description_yjs_state", columnDefinition = "LONGBLOB")
     private byte[] descriptionYjsState;
 
+    @Column(name = "completed_at")
+    private LocalDateTime completedAt;
+
     private Task(Workspace workspace, String name, String description,
                   LocalDate startDate, LocalDate dueDate, User createdBy, TaskPriority priority) {
         this.workspace = workspace;
@@ -99,6 +102,11 @@ public class Task {
     }
 
     public void changeStatus(TaskStatus newStatus) {
+        if (newStatus == TaskStatus.DONE && this.status != TaskStatus.DONE) {
+            this.completedAt = LocalDateTime.now();
+        } else if (newStatus != TaskStatus.DONE && this.status == TaskStatus.DONE) {
+            this.completedAt = null;
+        }
         this.status = newStatus;
     }
 
