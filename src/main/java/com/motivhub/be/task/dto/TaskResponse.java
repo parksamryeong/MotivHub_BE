@@ -19,12 +19,13 @@ public record TaskResponse(
         TaskPriority priority,
         List<UserSummary> assignees,
         UserSummary createdBy,
-        LocalDateTime createdAt) {
+        LocalDateTime createdAt,
+        LocalDateTime completedAt) {
 
     public static TaskResponse of(Task task, List<UserSummary> assignees) {
         return new TaskResponse(
                 task.getId(), task.getWorkspace().getId(), task.getName(), task.getDescription(),
                 task.getStartDate(), task.getDueDate(), task.getStatus(), task.getPriority(), assignees,
-                UserSummary.from(task.getCreatedBy()), task.getCreatedAt());
+                UserSummary.from(task.getCreatedBy()), task.getCreatedAt(), task.getCompletedAt());
     }
 }

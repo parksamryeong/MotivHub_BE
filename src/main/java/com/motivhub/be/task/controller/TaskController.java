@@ -1,5 +1,6 @@
 package com.motivhub.be.task.controller;
 
+import com.motivhub.be.task.domain.TaskStatus;
 import com.motivhub.be.task.dto.MyTaskResponse;
 import com.motivhub.be.task.dto.TaskActivityLogResponse;
 import com.motivhub.be.task.dto.TaskAssigneeRequest;
@@ -25,6 +26,7 @@ import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -126,7 +128,8 @@ public class TaskController {
     }
 
     @GetMapping("/api/tasks/mine")
-    public ResponseEntity<List<MyTaskResponse>> listMine(@AuthenticationPrincipal Long userId) {
-        return ResponseEntity.ok(taskService.listMine(userId));
+    public ResponseEntity<List<MyTaskResponse>> listMine(
+            @AuthenticationPrincipal Long userId, @RequestParam(required = false) TaskStatus status) {
+        return ResponseEntity.ok(taskService.listMine(userId, status));
     }
 }

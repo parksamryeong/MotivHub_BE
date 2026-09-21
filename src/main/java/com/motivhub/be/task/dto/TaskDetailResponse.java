@@ -11,12 +11,12 @@ public record TaskDetailResponse(
         Long id, Long workspaceId, String name, String description,
         LocalDate startDate, LocalDate dueDate, TaskStatus status, TaskPriority priority,
         List<UserSummary> assignees, UserSummary createdBy, LocalDateTime createdAt,
-        List<TaskChecklistItemResponse> checklistItems) {
+        LocalDateTime completedAt, List<TaskChecklistItemResponse> checklistItems) {
 
     public static TaskDetailResponse of(TaskResponse task, List<TaskChecklistItemResponse> checklistItems) {
         return new TaskDetailResponse(
                 task.id(), task.workspaceId(), task.name(), task.description(),
                 task.startDate(), task.dueDate(), task.status(), task.priority(),
-                task.assignees(), task.createdBy(), task.createdAt(), checklistItems);
+                task.assignees(), task.createdBy(), task.createdAt(), task.completedAt(), checklistItems);
     }
 }

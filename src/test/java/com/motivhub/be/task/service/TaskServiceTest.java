@@ -969,9 +969,11 @@ class TaskServiceTest extends AbstractIntegrationTest {
         WorkspaceResponse workspace = workspaceService.create(user.getId(), "완료시각 워크스페이스");
         TaskResponse task = taskService.create(user.getId(), workspace.id(),
                 new TaskCreateRequest("완료될 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of(user.getId())));
+        assertThat(task.completedAt()).isNull();
 
-        taskService.changeStatus(user.getId(), task.id(), TaskStatus.DONE);
+        TaskResponse updated = taskService.changeStatus(user.getId(), task.id(), TaskStatus.DONE);
 
+        assertThat(updated.completedAt()).isNotNull();
         List<MyTaskResponse> result = taskService.listMine(user.getId(), TaskStatus.DONE);
         assertThat(result).hasSize(1);
         assertThat(result.get(0).completedAt()).isNotNull();
@@ -996,7 +998,7 @@ class TaskServiceTest extends AbstractIntegrationTest {
     void listMineWithNoStatusBehavesExactlyAsBefore() {
         User user = createUniqueUser("status-default-user");
         WorkspaceResponse workspace = workspaceService.create(user.getId(), "기본동작 워크스페이스");
-        TaskResponse waiting = taskService.create(user.getId(), workspace.id(),
+        taskService.create(user.getId(), workspace.id(),
                 new TaskCreateRequest("대기 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1),
                         List.of(user.getId())));
         TaskResponse done = taskService.create(user.getId(), workspace.id(),
@@ -1015,7 +1017,7 @@ class TaskServiceTest extends AbstractIntegrationTest {
     void listMineWithSpecificNonDoneStatusFiltersToThatStatusOnly() {
         User user = createUniqueUser("status-filter-user");
         WorkspaceResponse workspace = workspaceService.create(user.getId(), "상태필터 워크스페이스");
-        TaskResponse waiting = taskService.create(user.getId(), workspace.id(),
+        taskService.create(user.getId(), workspace.id(),
                 new TaskCreateRequest("대기중 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1),
                         List.of(user.getId())));
         TaskResponse inProgress = taskService.create(user.getId(), workspace.id(),
