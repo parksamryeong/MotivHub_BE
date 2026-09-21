@@ -180,7 +180,19 @@ class TaskControllerTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.checklistItems.length()").value(1))
                 .andExpect(jsonPath("$.checklistItems[0].content").value("상세 확인용 항목"))
                 .andExpect(jsonPath("$.checklistItems[0].isDone").value(false))
-                .andExpect(jsonPath("$.priority").value("MEDIUM"));
+                .andExpect(jsonPath("$.priority").value("MEDIUM"))
+                .andExpect(jsonPath("$.completedAt").doesNotExist());
+
+        mockMvc.perform(patch("/api/tasks/{id}/status", taskId)
+                        .header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new TaskStatusUpdateRequest(TaskStatus.DONE))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/tasks/{id}", taskId)
+                        .header("Authorization", "Bearer " + tokenFor(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.completedAt").exists());
     }
 
     @Test
@@ -354,5 +366,75 @@ class TaskControllerTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/tasks/{id}/duplicate", taskId)
                         .header("Authorization", "Bearer " + tokenFor(outsider)))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void listMineWithoutStatusParamReturnsNonDoneTasksViaApi() throws Exception {
+        User user = newUser("mine-status-default");
+        WorkspaceResponse workspace = workspaceService.create(user.getId(), "내할일 기본 API 워크스페이스");
+        mockMvc.perform(post("/api/workspaces/{id}/tasks", workspace.id())
+                        .header("Authorization", "Bearer " + tokenFor(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new TaskCreateRequest("기본 태스크", null, LocalDate.now(),
+                                        LocalDate.now().plusDays(1), List.of(user.getId())))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/tasks/mine")
+                        .header("Authorization", "Bearer " + tokenFor(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].completedAt").doesNotExist());
+    }
+
+    @Test
+    void listMineWithDoneStatusParamReturnsCompletedTasksViaApi() throws Exception {
+        User user = newUser("mine-status-done");
+        WorkspaceResponse workspace = workspaceService.create(user.getId(), "내할일 완료 API 워크스페이스");
+        String createResponse = mockMvc.perform(post("/api/workspaces/{id}/tasks", workspace.id())
+                        .header("Authorization", "Bearer " + tokenFor(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new TaskCreateRequest("완료될 API 태스크", null, LocalDate.now(),
+                                        LocalDate.now().plusDays(1), List.of(user.getId())))))
+                .andReturn().getResponse().getContentAsString();
+        Long taskId = objectMapper.readTree(createResponse).get("id").asLong();
+        mockMvc.perform(patch("/api/tasks/{id}/status", taskId)
+                        .header("Authorization", "Bearer " + tokenFor(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new TaskStatusUpdateRequest(TaskStatus.DONE))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/tasks/mine").queryParam("status", "DONE")
+                        .header("Authorization", "Bearer " + tokenFor(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].name").value("완료될 API 태스크"))
+                .andExpect(jsonPath("$[0].completedAt").exists());
+    }
+
+    @Test
+    void listMineWithNonDoneStatusParamFiltersViaApi() throws Exception {
+        User user = newUser("mine-status-inprogress");
+        WorkspaceResponse workspace = workspaceService.create(user.getId(), "내할일 진행중 API 워크스페이스");
+        String createResponse = mockMvc.perform(post("/api/workspaces/{id}/tasks", workspace.id())
+                        .header("Authorization", "Bearer " + tokenFor(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new TaskCreateRequest("진행중 API 태스크", null, LocalDate.now(),
+                                        LocalDate.now().plusDays(1), List.of(user.getId())))))
+                .andReturn().getResponse().getContentAsString();
+        Long taskId = objectMapper.readTree(createResponse).get("id").asLong();
+        mockMvc.perform(patch("/api/tasks/{id}/status", taskId)
+                        .header("Authorization", "Bearer " + tokenFor(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new TaskStatusUpdateRequest(TaskStatus.IN_PROGRESS))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/tasks/mine").queryParam("status", "IN_PROGRESS")
+                        .header("Authorization", "Bearer " + tokenFor(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].name").value("진행중 API 태스크"));
     }
 }
