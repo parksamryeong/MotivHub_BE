@@ -3,6 +3,7 @@ package com.motivhub.be.task.service;
 import com.motivhub.be.file.repository.WorkspaceFileRepository;
 import com.motivhub.be.task.domain.Task;
 import com.motivhub.be.task.domain.TaskActivityAction;
+import com.motivhub.be.task.domain.TaskChecklistItem;
 import com.motivhub.be.task.domain.TaskPriority;
 import com.motivhub.be.task.dto.MyTaskResponse;
 import com.motivhub.be.task.dto.TaskCreateRequest;
@@ -29,6 +30,7 @@ import com.motivhub.be.user.repository.UserRepository;
 import com.motivhub.be.task.domain.TaskStatus;
 import com.motivhub.be.workspace.domain.Workspace;
 import com.motivhub.be.workspace.domain.WorkspaceMember;
+import com.motivhub.be.workspace.exception.NotWorkspaceMemberException;
 import com.motivhub.be.workspace.exception.NotWorkspaceOwnerException;
 import com.motivhub.be.workspace.service.WorkspaceService;
 import java.time.LocalDate;
@@ -250,6 +252,44 @@ public class TaskService {
         }
         eventPublisher.publishEvent(new TaskChangedEvent(taskId, task.getWorkspace().getId(), TaskChangeType.UPDATED));
         return TaskResponse.of(task, getAssigneeSummaries(taskId));
+    }
+
+    @Transactional
+    public TaskResponse duplicate(Long userId, Long taskId) {
+        Task original = getTask(taskId);
+        Long workspaceId = original.getWorkspace().getId();
+        workspaceService.getMembership(workspaceId, userId);
+
+        List<Long> validAssigneeIds = taskAssigneeRepository.findByTaskId(taskId).stream()
+                .map(assignee -> assignee.getUser().getId())
+                .filter(assigneeId -> isStillWorkspaceMember(workspaceId, assigneeId))
+                .toList();
+
+        TaskCreateRequest duplicateRequest = new TaskCreateRequest(
+                original.getName(), original.getDescription(), original.getStartDate(), original.getDueDate(),
+                validAssigneeIds, original.getPriority());
+        // 같은 빈 내부 호출이라 프록시를 타지 않는다 - create()의 @Transactional은 무시되고
+        // duplicate()가 연 트랜잭션에서 그대로 실행된다(REQUIRED라 결과는 동일). create()의
+        // propagation/rollback 규칙을 바꾸더라도 이 경로에는 적용되지 않으니 주의.
+        TaskResponse duplicated = create(userId, workspaceId, duplicateRequest);
+
+        Task duplicatedTask = getTask(duplicated.id());
+        for (TaskChecklistItem item : taskChecklistItemRepository.findByTaskIdOrderByOrderIndexAsc(taskId)) {
+            taskChecklistItemRepository.save(
+                    TaskChecklistItem.create(duplicatedTask, item.getContent(), item.getOrderIndex()));
+        }
+        return duplicated;
+    }
+
+    // 원본 담당자 중 이미 워크스페이스를 나갔거나 추방된 사람은 조용히 제외한다 - leave()/kick()이
+    // TaskAssignee 행을 정리하지 않으므로 원본 담당자 목록에 비멤버가 남아있을 수 있다.
+    private boolean isStillWorkspaceMember(Long workspaceId, Long userId) {
+        try {
+            workspaceService.getMembership(workspaceId, userId);
+            return true;
+        } catch (NotWorkspaceMemberException e) {
+            return false;
+        }
     }
 
     @Transactional

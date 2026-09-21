@@ -316,4 +316,43 @@ class TaskControllerTest extends AbstractIntegrationTest {
                         .content(objectMapper.writeValueAsString(new TaskPriorityUpdateRequest(TaskPriority.HIGH))))
                 .andExpect(status().isForbidden());
     }
+
+    @Test
+    void duplicateTaskViaApiReturnsNewTask() throws Exception {
+        User owner = newUser("dup-api-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "복제 API 워크스페이스");
+        String createResponse = mockMvc.perform(post("/api/workspaces/{id}/tasks", workspace.id())
+                        .header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new TaskCreateRequest("API 복제 원본", null, LocalDate.now(),
+                                        LocalDate.now().plusDays(1), List.of()))))
+                .andReturn().getResponse().getContentAsString();
+        Long taskId = objectMapper.readTree(createResponse).get("id").asLong();
+
+        mockMvc.perform(post("/api/tasks/{id}/duplicate", taskId)
+                        .header("Authorization", "Bearer " + tokenFor(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("API 복제 원본"))
+                .andExpect(jsonPath("$.id").value(org.hamcrest.Matchers.not(taskId)));
+    }
+
+    @Test
+    void nonMemberCannotDuplicateTaskViaApiReturns403() throws Exception {
+        User owner = newUser("dup-api-forbidden-owner");
+        User outsider = newUser("dup-api-outsider");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "복제 API 권한 워크스페이스");
+        String createResponse = mockMvc.perform(post("/api/workspaces/{id}/tasks", workspace.id())
+                        .header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new TaskCreateRequest("API 권한 확인 태스크", null, LocalDate.now(),
+                                        LocalDate.now().plusDays(1), List.of()))))
+                .andReturn().getResponse().getContentAsString();
+        Long taskId = objectMapper.readTree(createResponse).get("id").asLong();
+
+        mockMvc.perform(post("/api/tasks/{id}/duplicate", taskId)
+                        .header("Authorization", "Bearer " + tokenFor(outsider)))
+                .andExpect(status().isForbidden());
+    }
 }

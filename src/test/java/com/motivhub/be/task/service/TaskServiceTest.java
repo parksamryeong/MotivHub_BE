@@ -11,6 +11,7 @@ import com.motivhub.be.task.domain.TaskPriority;
 import com.motivhub.be.task.dto.TaskActivityLogResponse;
 import com.motivhub.be.task.service.TaskActivityLogService;
 import com.motivhub.be.task.dto.MyTaskResponse;
+import com.motivhub.be.task.dto.TaskChecklistItemResponse;
 import com.motivhub.be.task.dto.TaskCreateRequest;
 import com.motivhub.be.task.dto.TaskResponse;
 import com.motivhub.be.task.domain.TaskStatus;
@@ -847,5 +848,118 @@ class TaskServiceTest extends AbstractIntegrationTest {
         List<MyTaskResponse> result = taskService.listMine(user.getId());
 
         assertThat(result).extracting(MyTaskResponse::name).containsExactly("낮음으로 시작한 태스크", "보통 태스크");
+    }
+
+    @Test
+    void duplicateCopiesNameDescriptionDatesAndPriority() {
+        User owner = createUniqueUser("dup-basic-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "복제 기본 워크스페이스");
+        TaskResponse original = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("원본 태스크", "원본 설명", LocalDate.now(), LocalDate.now().plusDays(5),
+                        List.of(), TaskPriority.HIGH));
+
+        TaskResponse duplicated = taskService.duplicate(owner.getId(), original.id());
+
+        assertThat(duplicated.id()).isNotEqualTo(original.id());
+        assertThat(duplicated.name()).isEqualTo("원본 태스크");
+        assertThat(duplicated.description()).isEqualTo("원본 설명");
+        assertThat(duplicated.startDate()).isEqualTo(original.startDate());
+        assertThat(duplicated.dueDate()).isEqualTo(original.dueDate());
+        assertThat(duplicated.priority()).isEqualTo(TaskPriority.HIGH);
+        assertThat(duplicated.status().name()).isEqualTo("WAITING");
+    }
+
+    @Test
+    void duplicateDoesNotMutateOriginal() {
+        User owner = createUniqueUser("dup-immutable-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "복제 원본보존 워크스페이스");
+        TaskResponse original = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("보존될 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        taskService.duplicate(owner.getId(), original.id());
+
+        TaskResponse stillOriginal = taskService.getDetail(owner.getId(), original.id());
+        assertThat(stillOriginal.name()).isEqualTo("보존될 태스크");
+    }
+
+    @Test
+    void duplicateCopiesChecklistItemsResetToNotDone() {
+        User owner = createUniqueUser("dup-checklist-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "복제 체크리스트 워크스페이스");
+        TaskResponse original = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("체크리스트 있는 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+        TaskChecklistItemResponse item1 = taskChecklistItemService.create(owner.getId(), original.id(), "항목1");
+        taskChecklistItemService.create(owner.getId(), original.id(), "항목2");
+        taskChecklistItemService.update(owner.getId(), original.id(), item1.id(), null, true);
+
+        TaskResponse duplicated = taskService.duplicate(owner.getId(), original.id());
+
+        List<TaskChecklistItemResponse> duplicatedItems = taskChecklistItemService.list(owner.getId(), duplicated.id());
+        assertThat(duplicatedItems).hasSize(2);
+        assertThat(duplicatedItems).extracting(TaskChecklistItemResponse::content)
+                .containsExactly("항목1", "항목2");
+        assertThat(duplicatedItems).extracting(TaskChecklistItemResponse::isDone)
+                .containsExactly(false, false);
+    }
+
+    @Test
+    void duplicateCopiesAssignees() {
+        User owner = createUniqueUser("dup-assignee-owner");
+        User assignee = createUniqueUser("dup-assignee-member");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "복제 담당자 워크스페이스");
+        joinAsMember(workspace.id(), assignee);
+        TaskResponse original = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("담당자 있는 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5),
+                        List.of(assignee.getId())));
+
+        TaskResponse duplicated = taskService.duplicate(owner.getId(), original.id());
+
+        assertThat(duplicated.assignees()).extracting(UserSummary::id).containsExactly(assignee.getId());
+    }
+
+    @Test
+    void duplicateExcludesAssigneeWhoHasLeftWorkspace() {
+        User owner = createUniqueUser("dup-exmember-owner");
+        User stayingAssignee = createUniqueUser("dup-exmember-staying");
+        User leavingAssignee = createUniqueUser("dup-exmember-leaving");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "복제 탈퇴담당자 워크스페이스");
+        joinAsMember(workspace.id(), stayingAssignee);
+        joinAsMember(workspace.id(), leavingAssignee);
+        TaskResponse original = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("두 담당자 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5),
+                        List.of(stayingAssignee.getId(), leavingAssignee.getId())));
+
+        workspaceService.kick(owner.getId(), workspace.id(), leavingAssignee.getId());
+
+        TaskResponse duplicated = taskService.duplicate(owner.getId(), original.id());
+
+        assertThat(duplicated.assignees()).extracting(UserSummary::id)
+                .containsExactly(stayingAssignee.getId());
+    }
+
+    @Test
+    void anyWorkspaceMemberCanDuplicateTask() {
+        User owner = createUniqueUser("dup-anymember-owner");
+        User plainMember = createUniqueUser("dup-anymember-plain");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "복제 아무나 워크스페이스");
+        joinAsMember(workspace.id(), plainMember);
+        TaskResponse original = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("아무나 복제 가능 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        TaskResponse duplicated = taskService.duplicate(plainMember.getId(), original.id());
+
+        assertThat(duplicated.name()).isEqualTo("아무나 복제 가능 태스크");
+    }
+
+    @Test
+    void nonMemberCannotDuplicateTask() {
+        User owner = createUniqueUser("dup-outsider-owner");
+        User outsider = createUniqueUser("dup-outsider-user");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "복제 비멤버 워크스페이스");
+        TaskResponse original = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("비멤버 접근 불가 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        assertThatThrownBy(() -> taskService.duplicate(outsider.getId(), original.id()))
+                .isInstanceOf(NotWorkspaceMemberException.class);
     }
 }

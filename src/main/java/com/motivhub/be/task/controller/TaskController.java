@@ -108,6 +108,11 @@ public class TaskController {
         return ResponseEntity.ok(taskService.addAssignee(userId, id, request.userId()));
     }
 
+    @PostMapping("/api/tasks/{id}/duplicate")
+    public ResponseEntity<TaskResponse> duplicate(@AuthenticationPrincipal Long userId, @PathVariable Long id) {
+        return ResponseEntity.ok(taskService.duplicate(userId, id));
+    }
+
     @DeleteMapping("/api/tasks/{id}/assignees/{targetUserId}")
     public ResponseEntity<TaskResponse> removeAssignee(
             @AuthenticationPrincipal Long userId, @PathVariable Long id, @PathVariable Long targetUserId) {
