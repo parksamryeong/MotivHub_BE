@@ -962,4 +962,106 @@ class TaskServiceTest extends AbstractIntegrationTest {
         assertThatThrownBy(() -> taskService.duplicate(outsider.getId(), original.id()))
                 .isInstanceOf(NotWorkspaceMemberException.class);
     }
+
+    @Test
+    void completingTaskSetsCompletedAt() {
+        User user = createUniqueUser("completedat-set-user");
+        WorkspaceResponse workspace = workspaceService.create(user.getId(), "완료시각 워크스페이스");
+        TaskResponse task = taskService.create(user.getId(), workspace.id(),
+                new TaskCreateRequest("완료될 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of(user.getId())));
+
+        taskService.changeStatus(user.getId(), task.id(), TaskStatus.DONE);
+
+        List<MyTaskResponse> result = taskService.listMine(user.getId(), TaskStatus.DONE);
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).completedAt()).isNotNull();
+    }
+
+    @Test
+    void revertingDoneClearsCompletedAt() {
+        User user = createUniqueUser("completedat-clear-user");
+        WorkspaceResponse workspace = workspaceService.create(user.getId(), "완료취소 워크스페이스");
+        TaskResponse task = taskService.create(user.getId(), workspace.id(),
+                new TaskCreateRequest("완료취소될 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of(user.getId())));
+        taskService.changeStatus(user.getId(), task.id(), TaskStatus.DONE);
+
+        taskService.changeStatus(user.getId(), task.id(), TaskStatus.IN_PROGRESS);
+
+        List<MyTaskResponse> result = taskService.listMine(user.getId(), TaskStatus.IN_PROGRESS);
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).completedAt()).isNull();
+    }
+
+    @Test
+    void listMineWithNoStatusBehavesExactlyAsBefore() {
+        User user = createUniqueUser("status-default-user");
+        WorkspaceResponse workspace = workspaceService.create(user.getId(), "기본동작 워크스페이스");
+        TaskResponse waiting = taskService.create(user.getId(), workspace.id(),
+                new TaskCreateRequest("대기 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1),
+                        List.of(user.getId())));
+        TaskResponse done = taskService.create(user.getId(), workspace.id(),
+                new TaskCreateRequest("완료 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1),
+                        List.of(user.getId())));
+        taskService.changeStatus(user.getId(), done.id(), TaskStatus.DONE);
+
+        List<MyTaskResponse> withoutStatus = taskService.listMine(user.getId());
+        List<MyTaskResponse> withNullStatus = taskService.listMine(user.getId(), null);
+
+        assertThat(withoutStatus).extracting(MyTaskResponse::name).containsExactly("대기 태스크");
+        assertThat(withNullStatus).extracting(MyTaskResponse::name).containsExactly("대기 태스크");
+    }
+
+    @Test
+    void listMineWithSpecificNonDoneStatusFiltersToThatStatusOnly() {
+        User user = createUniqueUser("status-filter-user");
+        WorkspaceResponse workspace = workspaceService.create(user.getId(), "상태필터 워크스페이스");
+        TaskResponse waiting = taskService.create(user.getId(), workspace.id(),
+                new TaskCreateRequest("대기중 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1),
+                        List.of(user.getId())));
+        TaskResponse inProgress = taskService.create(user.getId(), workspace.id(),
+                new TaskCreateRequest("진행중 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1),
+                        List.of(user.getId())));
+        taskService.changeStatus(user.getId(), inProgress.id(), TaskStatus.IN_PROGRESS);
+
+        List<MyTaskResponse> result = taskService.listMine(user.getId(), TaskStatus.IN_PROGRESS);
+
+        assertThat(result).extracting(MyTaskResponse::name).containsExactly("진행중 태스크");
+    }
+
+    @Test
+    void listMineWithDoneStatusSortsByCompletedAtDescending() {
+        User user = createUniqueUser("done-sort-user");
+        WorkspaceResponse workspace = workspaceService.create(user.getId(), "완료정렬 워크스페이스");
+        TaskResponse firstDone = taskService.create(user.getId(), workspace.id(),
+                new TaskCreateRequest("먼저 완료된 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1),
+                        List.of(user.getId())));
+        TaskResponse secondDone = taskService.create(user.getId(), workspace.id(),
+                new TaskCreateRequest("나중에 완료된 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1),
+                        List.of(user.getId())));
+        taskService.changeStatus(user.getId(), firstDone.id(), TaskStatus.DONE);
+        taskService.changeStatus(user.getId(), secondDone.id(), TaskStatus.DONE);
+
+        List<MyTaskResponse> result = taskService.listMine(user.getId(), TaskStatus.DONE);
+
+        assertThat(result).extracting(MyTaskResponse::name)
+                .containsExactly("나중에 완료된 태스크", "먼저 완료된 태스크");
+    }
+
+    @Test
+    void listMineWithDoneStatusExcludesTasksFromDeletedWorkspacesAndExMembers() {
+        User owner = createUniqueUser("done-filter-owner");
+        User leavingAssignee = createUniqueUser("done-filter-leaving");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "완료필터 워크스페이스");
+        joinAsMember(workspace.id(), leavingAssignee);
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("완료필터 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1),
+                        List.of(leavingAssignee.getId())));
+        taskService.changeStatus(owner.getId(), task.id(), TaskStatus.DONE);
+
+        workspaceService.kick(owner.getId(), workspace.id(), leavingAssignee.getId());
+
+        List<MyTaskResponse> result = taskService.listMine(leavingAssignee.getId(), TaskStatus.DONE);
+
+        assertThat(result).isEmpty();
+    }
 }

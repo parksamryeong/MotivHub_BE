@@ -1,0 +1,1 @@
+ALTER TABLE task ADD COLUMN completed_at DATETIME(6) NULL;

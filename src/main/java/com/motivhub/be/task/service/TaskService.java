@@ -43,6 +43,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -327,7 +328,25 @@ public class TaskService {
     }
 
     public List<MyTaskResponse> listMine(Long userId) {
-        List<Task> tasks = taskRepository.findAssignedToUserExcludingStatus(userId, TaskStatus.DONE);
+        return listMine(userId, null);
+    }
+
+    public List<MyTaskResponse> listMine(Long userId, TaskStatus status) {
+        List<Task> tasks = fetchTasksForMine(userId, status);
+        return toMyTaskResponses(tasks);
+    }
+
+    private List<Task> fetchTasksForMine(Long userId, TaskStatus status) {
+        if (status == null) {
+            return taskRepository.findAssignedToUserExcludingStatus(userId, TaskStatus.DONE);
+        }
+        if (status == TaskStatus.DONE) {
+            return taskRepository.findCompletedTasksForUser(userId, PageRequest.of(0, 50));
+        }
+        return taskRepository.findAssignedToUserByStatus(userId, status);
+    }
+
+    private List<MyTaskResponse> toMyTaskResponses(List<Task> tasks) {
         List<Long> taskIds = tasks.stream().map(Task::getId).toList();
         Map<Long, TaskChecklistProgress> progressByTaskId = checklistProgressByTaskId(taskIds);
         Set<Long> taskIdsWithComments = taskIds.isEmpty()
