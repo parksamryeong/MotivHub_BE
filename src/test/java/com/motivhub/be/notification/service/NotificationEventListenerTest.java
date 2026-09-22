@@ -12,6 +12,7 @@ import com.motivhub.be.task.event.AssigneeAddedEvent;
 import com.motivhub.be.task.event.ChecklistCompletedEvent;
 import com.motivhub.be.task.event.DueDateApproachingEvent;
 import com.motivhub.be.task.event.TaskCommentCreatedEvent;
+import com.motivhub.be.task.event.TaskOverdueEvent;
 import com.motivhub.be.task.service.TaskService;
 import com.motivhub.be.user.domain.SocialProvider;
 import com.motivhub.be.user.domain.User;
@@ -316,5 +317,53 @@ class NotificationEventListenerTest extends AbstractIntegrationTest {
         TestTransaction.start();
 
         assertThat(notificationService.list(member.getId(), PageRequest.of(0, 20)).getContent()).hasSize(1);
+    }
+
+    @Test
+    void taskOverdueEventNotifiesAssigneesAndOwner() {
+        User owner = newUser("l7-owner");
+        User assignee = newUser("l7-assignee");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "리스너 만료 워크스페이스");
+        joinAsMember(workspace.id(), assignee);
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("리스너 만료 태스크", null, LocalDate.now().minusDays(5), LocalDate.now().minusDays(1),
+                        List.of(assignee.getId())));
+
+        TestTransaction.flagForCommit();
+        eventPublisher.publishEvent(new TaskOverdueEvent(task.id()));
+        TestTransaction.end();
+        TestTransaction.start();
+
+        List<NotificationResponse> ownerNotifications = notificationService
+                .list(owner.getId(), PageRequest.of(0, 20)).getContent();
+        List<NotificationResponse> assigneeNotifications = notificationService
+                .list(assignee.getId(), PageRequest.of(0, 20)).getContent();
+        assertThat(ownerNotifications).hasSize(1);
+        assertThat(ownerNotifications.get(0).type()).isEqualTo(NotificationType.TASK_OVERDUE);
+        assertThat(ownerNotifications.get(0).targetType()).isEqualTo(NotificationTargetType.TASK);
+        assertThat(ownerNotifications.get(0).targetId()).isEqualTo(task.id());
+        assertThat(ownerNotifications.get(0).message()).contains("리스너 만료 태스크");
+        assertThat(assigneeNotifications).hasSize(1);
+        assertThat(assigneeNotifications.get(0).type()).isEqualTo(NotificationType.TASK_OVERDUE);
+    }
+
+    @Test
+    void taskOverdueEventHasNoDedupGuardUnlikeDueDateApproaching() {
+        User owner = newUser("l8-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "리스너 만료 중복허용 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("리스너 만료 중복허용 태스크", null, LocalDate.now().minusDays(5), LocalDate.now().minusDays(1), List.of()));
+
+        TestTransaction.flagForCommit();
+        eventPublisher.publishEvent(new TaskOverdueEvent(task.id()));
+        TestTransaction.end();
+        TestTransaction.start();
+
+        TestTransaction.flagForCommit();
+        eventPublisher.publishEvent(new TaskOverdueEvent(task.id()));
+        TestTransaction.end();
+        TestTransaction.start();
+
+        assertThat(notificationService.list(owner.getId(), PageRequest.of(0, 20)).getContent()).hasSize(2);
     }
 }

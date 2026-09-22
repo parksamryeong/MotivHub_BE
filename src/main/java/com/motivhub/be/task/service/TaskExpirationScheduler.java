@@ -4,6 +4,7 @@ import com.motivhub.be.task.domain.Task;
 import com.motivhub.be.task.domain.TaskStatus;
 import com.motivhub.be.task.event.TaskChangeType;
 import com.motivhub.be.task.event.TaskChangedEvent;
+import com.motivhub.be.task.event.TaskOverdueEvent;
 import com.motivhub.be.task.repository.TaskRepository;
 import java.time.LocalDate;
 import java.util.List;
@@ -31,6 +32,7 @@ public class TaskExpirationScheduler {
         overdueTasks.forEach(task -> {
             task.expire();
             eventPublisher.publishEvent(new TaskChangedEvent(task.getId(), task.getWorkspace().getId(), TaskChangeType.UPDATED));
+            eventPublisher.publishEvent(new TaskOverdueEvent(task.getId()));
         });
     }
 }

@@ -7,6 +7,7 @@ import com.motivhub.be.task.event.AssigneeAddedEvent;
 import com.motivhub.be.task.event.ChecklistCompletedEvent;
 import com.motivhub.be.task.event.DueDateApproachingEvent;
 import com.motivhub.be.task.event.TaskCommentCreatedEvent;
+import com.motivhub.be.task.event.TaskOverdueEvent;
 import com.motivhub.be.task.repository.TaskAssigneeRepository;
 import com.motivhub.be.task.service.TaskService;
 import com.motivhub.be.user.domain.User;
@@ -109,6 +110,24 @@ public class NotificationEventListener {
                     notifySafely(recipientId, NotificationType.DUE_DATE_APPROACHING,
                             NotificationTargetType.TASK, task.getId(), message);
                 }
+            }
+        });
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onTaskOverdue(TaskOverdueEvent event) {
+        handleSafely("onTaskOverdue", () -> {
+            Task task = taskService.getTask(event.taskId());
+            Set<Long> recipientIds = assigneeIds(task.getId());
+            workspaceMemberRepository.findByWorkspaceIdAndRole(task.getWorkspace().getId(), WorkspaceRole.OWNER)
+                    .ifPresent(owner -> recipientIds.add(owner.getUser().getId()));
+            String message = "'" + task.getName() + "' 마감일이 지나 자동으로 만료 처리되었습니다.";
+            // 이 태스크는 TaskExpirationScheduler에서 WAITING/IN_PROGRESS -> EXPIRED로 전환될 때만 이 이벤트를
+            // 받는데, 그 스케줄러의 조회 조건(status IN (WAITING, IN_PROGRESS))상 한 태스크가 이 경로를 두 번
+            // 탈 수 없다 - 그래서 onDueDateApproaching과 달리 alreadyNotifiedToday 중복 방지가 필요 없다.
+            for (Long recipientId : recipientIds) {
+                notifySafely(recipientId, NotificationType.TASK_OVERDUE,
+                        NotificationTargetType.TASK, task.getId(), message);
             }
         });
     }
