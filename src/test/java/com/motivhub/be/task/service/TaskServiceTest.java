@@ -1066,4 +1066,80 @@ class TaskServiceTest extends AbstractIntegrationTest {
 
         assertThat(result).isEmpty();
     }
+
+    @Test
+    void listMineWithKeywordFiltersByNameCaseInsensitively() {
+        User user = createUniqueUser("keyword-user");
+        WorkspaceResponse workspace = workspaceService.create(user.getId(), "키워드 워크스페이스");
+        taskService.create(user.getId(), workspace.id(),
+                new TaskCreateRequest("Design Review", null, LocalDate.now(), LocalDate.now().plusDays(1),
+                        List.of(user.getId())));
+        taskService.create(user.getId(), workspace.id(),
+                new TaskCreateRequest("백엔드 작업", null, LocalDate.now(), LocalDate.now().plusDays(1),
+                        List.of(user.getId())));
+
+        List<MyTaskResponse> result = taskService.listMine(user.getId(), null, "design");
+
+        assertThat(result).extracting(MyTaskResponse::name).containsExactly("Design Review");
+    }
+
+    @Test
+    void listMineWithKeywordCombinesWithStatusFilter() {
+        User user = createUniqueUser("keyword-status-user");
+        WorkspaceResponse workspace = workspaceService.create(user.getId(), "키워드상태 워크스페이스");
+        TaskResponse matchingInProgress = taskService.create(user.getId(), workspace.id(),
+                new TaskCreateRequest("결제 모듈 작업", null, LocalDate.now(), LocalDate.now().plusDays(1),
+                        List.of(user.getId())));
+        taskService.changeStatus(user.getId(), matchingInProgress.id(), TaskStatus.IN_PROGRESS);
+        TaskResponse matchingWaiting = taskService.create(user.getId(), workspace.id(),
+                new TaskCreateRequest("결제 문서화", null, LocalDate.now(), LocalDate.now().plusDays(1),
+                        List.of(user.getId())));
+        taskService.create(user.getId(), workspace.id(),
+                new TaskCreateRequest("알림 작업", null, LocalDate.now(), LocalDate.now().plusDays(1),
+                        List.of(user.getId())));
+
+        List<MyTaskResponse> result = taskService.listMine(user.getId(), TaskStatus.IN_PROGRESS, "결제");
+
+        assertThat(result).extracting(MyTaskResponse::name).containsExactly("결제 모듈 작업");
+        assertThat(matchingWaiting).isNotNull();
+    }
+
+    @Test
+    void listMineWithBlankKeywordBehavesAsNoFilter() {
+        User user = createUniqueUser("keyword-blank-user");
+        WorkspaceResponse workspace = workspaceService.create(user.getId(), "빈키워드 워크스페이스");
+        taskService.create(user.getId(), workspace.id(),
+                new TaskCreateRequest("아무 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1),
+                        List.of(user.getId())));
+
+        List<MyTaskResponse> withNullKeyword = taskService.listMine(user.getId(), null, null);
+        List<MyTaskResponse> withEmptyKeyword = taskService.listMine(user.getId(), null, "");
+        List<MyTaskResponse> withWhitespaceKeyword = taskService.listMine(user.getId(), null, "   ");
+
+        assertThat(withNullKeyword).extracting(MyTaskResponse::name).containsExactly("아무 태스크");
+        assertThat(withEmptyKeyword).extracting(MyTaskResponse::name).containsExactly("아무 태스크");
+        assertThat(withWhitespaceKeyword).extracting(MyTaskResponse::name).containsExactly("아무 태스크");
+    }
+
+    @Test
+    void listMineWithKeywordAndDoneStatusStillSortsByCompletedAtDescending() {
+        User user = createUniqueUser("keyword-done-user");
+        WorkspaceResponse workspace = workspaceService.create(user.getId(), "키워드완료 워크스페이스");
+        TaskResponse firstDone = taskService.create(user.getId(), workspace.id(),
+                new TaskCreateRequest("리포트 먼저 완료", null, LocalDate.now(), LocalDate.now().plusDays(1),
+                        List.of(user.getId())));
+        TaskResponse secondDone = taskService.create(user.getId(), workspace.id(),
+                new TaskCreateRequest("리포트 나중 완료", null, LocalDate.now(), LocalDate.now().plusDays(1),
+                        List.of(user.getId())));
+        taskService.create(user.getId(), workspace.id(),
+                new TaskCreateRequest("무관한 완료 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1),
+                        List.of(user.getId())));
+        taskService.changeStatus(user.getId(), firstDone.id(), TaskStatus.DONE);
+        taskService.changeStatus(user.getId(), secondDone.id(), TaskStatus.DONE);
+
+        List<MyTaskResponse> result = taskService.listMine(user.getId(), TaskStatus.DONE, "리포트");
+
+        assertThat(result).extracting(MyTaskResponse::name)
+                .containsExactly("리포트 나중 완료", "리포트 먼저 완료");
+    }
 }

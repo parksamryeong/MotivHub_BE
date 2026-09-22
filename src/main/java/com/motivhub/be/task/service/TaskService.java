@@ -328,22 +328,34 @@ public class TaskService {
     }
 
     public List<MyTaskResponse> listMine(Long userId) {
-        return listMine(userId, null);
+        return listMine(userId, null, null);
     }
 
     public List<MyTaskResponse> listMine(Long userId, TaskStatus status) {
-        List<Task> tasks = fetchTasksForMine(userId, status);
+        return listMine(userId, status, null);
+    }
+
+    public List<MyTaskResponse> listMine(Long userId, TaskStatus status, String q) {
+        String normalizedQ = normalizeKeyword(q);
+        List<Task> tasks = fetchTasksForMine(userId, status, normalizedQ);
         return toMyTaskResponses(tasks);
     }
 
-    private List<Task> fetchTasksForMine(Long userId, TaskStatus status) {
+    private String normalizeKeyword(String q) {
+        if (q == null || q.isBlank()) {
+            return null;
+        }
+        return q.trim();
+    }
+
+    private List<Task> fetchTasksForMine(Long userId, TaskStatus status, String q) {
         if (status == null) {
-            return taskRepository.findAssignedToUserExcludingStatus(userId, TaskStatus.DONE);
+            return taskRepository.findAssignedToUserExcludingStatus(userId, TaskStatus.DONE, q);
         }
         if (status == TaskStatus.DONE) {
-            return taskRepository.findCompletedTasksForUser(userId, PageRequest.of(0, 50));
+            return taskRepository.findCompletedTasksForUser(userId, q, PageRequest.of(0, 50));
         }
-        return taskRepository.findAssignedToUserByStatus(userId, status);
+        return taskRepository.findAssignedToUserByStatus(userId, status, q);
     }
 
     private List<MyTaskResponse> toMyTaskResponses(List<Task> tasks) {
