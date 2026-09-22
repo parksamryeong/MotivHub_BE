@@ -437,4 +437,30 @@ class TaskControllerTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].name").value("진행중 API 태스크"));
     }
+
+    @Test
+    void listMineWithKeywordParamFiltersByNameViaApi() throws Exception {
+        User user = newUser("mine-keyword");
+        WorkspaceResponse workspace = workspaceService.create(user.getId(), "내할일 키워드 API 워크스페이스");
+        mockMvc.perform(post("/api/workspaces/{id}/tasks", workspace.id())
+                        .header("Authorization", "Bearer " + tokenFor(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new TaskCreateRequest("Design Review", null, LocalDate.now(),
+                                        LocalDate.now().plusDays(1), List.of(user.getId())))))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/workspaces/{id}/tasks", workspace.id())
+                        .header("Authorization", "Bearer " + tokenFor(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new TaskCreateRequest("백엔드 작업", null, LocalDate.now(),
+                                        LocalDate.now().plusDays(1), List.of(user.getId())))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/tasks/mine").queryParam("q", "design")
+                        .header("Authorization", "Bearer " + tokenFor(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].name").value("Design Review"));
+    }
 }

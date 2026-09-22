@@ -26,25 +26,29 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
             + "WHERE t.status <> :excludedStatus AND w.deletedAt IS NULL "
             + "AND EXISTS (SELECT 1 FROM TaskAssignee ta WHERE ta.task = t AND ta.user.id = :userId) "
             + "AND EXISTS (SELECT 1 FROM WorkspaceMember wm WHERE wm.workspace = w AND wm.user.id = :userId) "
+            + "AND (:q IS NULL OR LOWER(t.name) LIKE LOWER(CONCAT('%', :q, '%'))) "
             + "ORDER BY t.dueDate ASC, "
             + "CASE t.priority WHEN 'URGENT' THEN 0 WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 WHEN 'LOW' THEN 3 END ASC, "
             + "t.id ASC")
     List<Task> findAssignedToUserExcludingStatus(
-            @Param("userId") Long userId, @Param("excludedStatus") TaskStatus excludedStatus);
+            @Param("userId") Long userId, @Param("excludedStatus") TaskStatus excludedStatus, @Param("q") String q);
 
     @Query("SELECT t FROM Task t JOIN FETCH t.workspace w "
             + "WHERE t.status = :status AND w.deletedAt IS NULL "
             + "AND EXISTS (SELECT 1 FROM TaskAssignee ta WHERE ta.task = t AND ta.user.id = :userId) "
             + "AND EXISTS (SELECT 1 FROM WorkspaceMember wm WHERE wm.workspace = w AND wm.user.id = :userId) "
+            + "AND (:q IS NULL OR LOWER(t.name) LIKE LOWER(CONCAT('%', :q, '%'))) "
             + "ORDER BY t.dueDate ASC, "
             + "CASE t.priority WHEN 'URGENT' THEN 0 WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 WHEN 'LOW' THEN 3 END ASC, "
             + "t.id ASC")
-    List<Task> findAssignedToUserByStatus(@Param("userId") Long userId, @Param("status") TaskStatus status);
+    List<Task> findAssignedToUserByStatus(
+            @Param("userId") Long userId, @Param("status") TaskStatus status, @Param("q") String q);
 
     @Query("SELECT t FROM Task t JOIN FETCH t.workspace w "
             + "WHERE t.status = 'DONE' AND w.deletedAt IS NULL "
             + "AND EXISTS (SELECT 1 FROM TaskAssignee ta WHERE ta.task = t AND ta.user.id = :userId) "
             + "AND EXISTS (SELECT 1 FROM WorkspaceMember wm WHERE wm.workspace = w AND wm.user.id = :userId) "
+            + "AND (:q IS NULL OR LOWER(t.name) LIKE LOWER(CONCAT('%', :q, '%'))) "
             + "ORDER BY t.completedAt DESC, t.id DESC")
-    List<Task> findCompletedTasksForUser(@Param("userId") Long userId, Pageable pageable);
+    List<Task> findCompletedTasksForUser(@Param("userId") Long userId, @Param("q") String q, Pageable pageable);
 }

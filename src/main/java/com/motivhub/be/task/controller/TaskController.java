@@ -129,7 +129,8 @@ public class TaskController {
 
     @GetMapping("/api/tasks/mine")
     public ResponseEntity<List<MyTaskResponse>> listMine(
-            @AuthenticationPrincipal Long userId, @RequestParam(required = false) TaskStatus status) {
-        return ResponseEntity.ok(taskService.listMine(userId, status));
+            @AuthenticationPrincipal Long userId, @RequestParam(required = false) TaskStatus status,
+            @RequestParam(required = false) String q) {
+        return ResponseEntity.ok(taskService.listMine(userId, status, q));
     }
 }
