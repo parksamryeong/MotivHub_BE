@@ -5,6 +5,7 @@ import com.motivhub.be.task.domain.Task;
 import com.motivhub.be.task.domain.TaskActivityAction;
 import com.motivhub.be.task.domain.TaskChecklistItem;
 import com.motivhub.be.task.domain.TaskPriority;
+import com.motivhub.be.task.domain.TaskWatcher;
 import com.motivhub.be.task.dto.MyTaskResponse;
 import com.motivhub.be.task.dto.TaskCreateRequest;
 import com.motivhub.be.task.dto.TaskResponse;
@@ -18,6 +19,7 @@ import com.motivhub.be.task.repository.TaskChecklistItemRepository;
 import com.motivhub.be.task.repository.TaskCommentRepository;
 import com.motivhub.be.task.repository.TaskNoteRepository;
 import com.motivhub.be.task.repository.TaskRepository;
+import com.motivhub.be.task.repository.TaskWatcherRepository;
 import com.motivhub.be.task.domain.TaskAssignee;
 import com.motivhub.be.task.event.AssigneeAddedEvent;
 import com.motivhub.be.task.event.TaskChangedEvent;
@@ -53,6 +55,7 @@ public class TaskService {
 
     private final TaskRepository taskRepository;
     private final TaskAssigneeRepository taskAssigneeRepository;
+    private final TaskWatcherRepository taskWatcherRepository;
     private final TaskChecklistItemRepository taskChecklistItemRepository;
     private final TaskCommentRepository taskCommentRepository;
     private final TaskActivityLogRepository taskActivityLogRepository;
@@ -65,6 +68,7 @@ public class TaskService {
     private final ApplicationEventPublisher eventPublisher;
 
     public TaskService(TaskRepository taskRepository, TaskAssigneeRepository taskAssigneeRepository,
+                        TaskWatcherRepository taskWatcherRepository,
                         TaskChecklistItemRepository taskChecklistItemRepository,
                         TaskCommentRepository taskCommentRepository, TaskActivityLogRepository taskActivityLogRepository,
                         TaskNoteRepository taskNoteRepository, WorkspaceFileRepository workspaceFileRepository,
@@ -73,6 +77,7 @@ public class TaskService {
                         ApplicationEventPublisher eventPublisher) {
         this.taskRepository = taskRepository;
         this.taskAssigneeRepository = taskAssigneeRepository;
+        this.taskWatcherRepository = taskWatcherRepository;
         this.taskChecklistItemRepository = taskChecklistItemRepository;
         this.taskCommentRepository = taskCommentRepository;
         this.taskActivityLogRepository = taskActivityLogRepository;
@@ -211,6 +216,7 @@ public class TaskService {
             throw new TaskEditForbiddenException("태스크 삭제 권한이 없습니다.");
         }
         taskAssigneeRepository.deleteByTaskId(taskId);
+        taskWatcherRepository.deleteByTaskId(taskId);
         taskCommentRepository.deleteByTaskId(taskId);
         taskActivityLogRepository.deleteByTaskId(taskId);
         taskChecklistItemRepository.deleteByTaskId(taskId);
@@ -279,6 +285,8 @@ public class TaskService {
             taskChecklistItemRepository.save(
                     TaskChecklistItem.create(duplicatedTask, item.getContent(), item.getOrderIndex()));
         }
+        // 구독자는 의도적으로 복제하지 않는다 - 구독은 순수 개인 선택이라, 원본을 구독 중이었다고 해서
+        // 복제본까지 자동으로 구독시키면 안 된다.
         return duplicated;
     }
 
@@ -325,6 +333,27 @@ public class TaskService {
                     eventPublisher.publishEvent(new TaskChangedEvent(taskId, task.getWorkspace().getId(), TaskChangeType.UPDATED));
                 });
         return TaskResponse.of(task, getAssigneeSummaries(taskId));
+    }
+
+    @Transactional
+    public void watch(Long userId, Long taskId) {
+        Task task = getTask(taskId);
+        workspaceService.getMembership(task.getWorkspace().getId(), userId);
+        if (!taskWatcherRepository.existsByTaskIdAndUserId(taskId, userId)) {
+            User user = userRepository.findById(userId)
+                    .orElseThrow(() -> new UserNotFoundException("유저를 찾을 수 없습니다."));
+            taskWatcherRepository.save(TaskWatcher.create(task, user));
+        }
+    }
+
+    @Transactional
+    public void unwatch(Long userId, Long taskId) {
+        taskWatcherRepository.findByTaskIdAndUserId(taskId, userId)
+                .ifPresent(taskWatcherRepository::delete);
+    }
+
+    public boolean isWatching(Long userId, Long taskId) {
+        return taskWatcherRepository.existsByTaskIdAndUserId(taskId, userId);
     }
 
     public List<MyTaskResponse> listMine(Long userId) {

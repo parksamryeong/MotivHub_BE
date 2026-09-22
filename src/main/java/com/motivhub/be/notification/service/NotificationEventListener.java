@@ -9,8 +9,10 @@ import com.motivhub.be.task.event.DueDateApproachingEvent;
 import com.motivhub.be.task.event.TaskCommentCreatedEvent;
 import com.motivhub.be.task.event.TaskOverdueEvent;
 import com.motivhub.be.task.repository.TaskAssigneeRepository;
+import com.motivhub.be.task.repository.TaskWatcherRepository;
 import com.motivhub.be.task.service.TaskService;
 import com.motivhub.be.user.domain.User;
+import com.motivhub.be.user.exception.UserNotFoundException;
 import com.motivhub.be.user.repository.UserRepository;
 import com.motivhub.be.workspace.domain.WorkspaceRole;
 import com.motivhub.be.workspace.repository.WorkspaceMemberRepository;
@@ -40,16 +42,19 @@ public class NotificationEventListener {
     private final NotificationService notificationService;
     private final TaskService taskService;
     private final TaskAssigneeRepository taskAssigneeRepository;
+    private final TaskWatcherRepository taskWatcherRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final UserRepository userRepository;
 
     public NotificationEventListener(NotificationService notificationService, TaskService taskService,
                                       TaskAssigneeRepository taskAssigneeRepository,
+                                      TaskWatcherRepository taskWatcherRepository,
                                       WorkspaceMemberRepository workspaceMemberRepository,
                                       UserRepository userRepository) {
         this.notificationService = notificationService;
         this.taskService = taskService;
         this.taskAssigneeRepository = taskAssigneeRepository;
+        this.taskWatcherRepository = taskWatcherRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.userRepository = userRepository;
     }
@@ -61,6 +66,18 @@ public class NotificationEventListener {
             String message = "'" + task.getName() + "'의 담당자로 지정되었습니다.";
             notifySafely(event.newAssigneeUserId(), NotificationType.ASSIGNEE_ADDED,
                     NotificationTargetType.TASK, task.getId(), message);
+
+            Set<Long> watcherRecipientIds = watcherIds(task.getId());
+            watcherRecipientIds.remove(event.newAssigneeUserId());
+            if (!watcherRecipientIds.isEmpty()) {
+                User newAssignee = userRepository.findById(event.newAssigneeUserId())
+                        .orElseThrow(() -> new UserNotFoundException("유저를 찾을 수 없습니다."));
+                String watcherMessage = "'" + newAssignee.getNickname() + "'님이 '" + task.getName() + "'의 담당자로 지정되었습니다.";
+                for (Long watcherId : watcherRecipientIds) {
+                    notifySafely(watcherId, NotificationType.ASSIGNEE_ADDED,
+                            NotificationTargetType.TASK, task.getId(), watcherMessage);
+                }
+            }
         });
     }
 
@@ -69,6 +86,7 @@ public class NotificationEventListener {
         handleSafely("onTaskCommentCreated", () -> {
             Task task = taskService.getTask(event.taskId());
             Set<Long> recipientIds = assigneeIds(task.getId());
+            recipientIds.addAll(watcherIds(task.getId()));
             recipientIds.add(task.getCreatedBy().getId());
             recipientIds.remove(event.authorId());
             String message = "'" + event.authorNickname() + "'님이 '" + task.getName() + "'에 댓글을 남겼습니다.";
@@ -89,8 +107,10 @@ public class NotificationEventListener {
     public void onChecklistCompleted(ChecklistCompletedEvent event) {
         handleSafely("onChecklistCompleted", () -> {
             Task task = taskService.getTask(event.taskId());
+            Set<Long> recipientIds = assigneeIds(task.getId());
+            recipientIds.addAll(watcherIds(task.getId()));
             String message = "'" + task.getName() + "'의 체크리스트를 모두 완료했습니다.";
-            for (Long recipientId : assigneeIds(task.getId())) {
+            for (Long recipientId : recipientIds) {
                 notifySafely(recipientId, NotificationType.CHECKLIST_COMPLETED,
                         NotificationTargetType.TASK, task.getId(), message);
             }
@@ -102,6 +122,7 @@ public class NotificationEventListener {
         handleSafely("onDueDateApproaching", () -> {
             Task task = taskService.getTask(event.taskId());
             Set<Long> recipientIds = assigneeIds(task.getId());
+            recipientIds.addAll(watcherIds(task.getId()));
             workspaceMemberRepository.findByWorkspaceIdAndRole(task.getWorkspace().getId(), WorkspaceRole.OWNER)
                     .ifPresent(owner -> recipientIds.add(owner.getUser().getId()));
             String message = "'" + task.getName() + "' 마감일이 이틀 남았습니다.";
@@ -119,6 +140,7 @@ public class NotificationEventListener {
         handleSafely("onTaskOverdue", () -> {
             Task task = taskService.getTask(event.taskId());
             Set<Long> recipientIds = assigneeIds(task.getId());
+            recipientIds.addAll(watcherIds(task.getId()));
             workspaceMemberRepository.findByWorkspaceIdAndRole(task.getWorkspace().getId(), WorkspaceRole.OWNER)
                     .ifPresent(owner -> recipientIds.add(owner.getUser().getId()));
             String message = "'" + task.getName() + "' 마감일이 지나 자동으로 만료 처리되었습니다.";
@@ -152,6 +174,12 @@ public class NotificationEventListener {
     private Set<Long> assigneeIds(Long taskId) {
         Set<Long> ids = new HashSet<>();
         taskAssigneeRepository.findByTaskId(taskId).forEach(assignee -> ids.add(assignee.getUser().getId()));
+        return ids;
+    }
+
+    private Set<Long> watcherIds(Long taskId) {
+        Set<Long> ids = new HashSet<>();
+        taskWatcherRepository.findByTaskId(taskId).forEach(watcher -> ids.add(watcher.getUser().getId()));
         return ids;
     }
 

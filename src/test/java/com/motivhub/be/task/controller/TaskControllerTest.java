@@ -1,6 +1,7 @@
 package com.motivhub.be.task.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -462,5 +463,78 @@ class TaskControllerTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].name").value("Design Review"));
+    }
+
+    @Test
+    void watchingTaskViaApiMakesIsWatchingTrueInDetailResponse() throws Exception {
+        User user = newUser("watch-api");
+        WorkspaceResponse workspace = workspaceService.create(user.getId(), "구독 API 워크스페이스");
+        String createResponse = mockMvc.perform(post("/api/workspaces/{id}/tasks", workspace.id())
+                        .header("Authorization", "Bearer " + tokenFor(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new TaskCreateRequest("구독 API 태스크", null, LocalDate.now(),
+                                        LocalDate.now().plusDays(1), List.of()))))
+                .andReturn().getResponse().getContentAsString();
+        Long taskId = objectMapper.readTree(createResponse).get("id").asLong();
+
+        mockMvc.perform(get("/api/tasks/{id}", taskId)
+                        .header("Authorization", "Bearer " + tokenFor(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isWatching").value(false));
+
+        mockMvc.perform(post("/api/tasks/{id}/watch", taskId)
+                        .header("Authorization", "Bearer " + tokenFor(user)))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/tasks/{id}", taskId)
+                        .header("Authorization", "Bearer " + tokenFor(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isWatching").value(true));
+    }
+
+    @Test
+    void unwatchingTaskViaApiMakesIsWatchingFalseAgain() throws Exception {
+        User user = newUser("unwatch-api");
+        WorkspaceResponse workspace = workspaceService.create(user.getId(), "구독취소 API 워크스페이스");
+        String createResponse = mockMvc.perform(post("/api/workspaces/{id}/tasks", workspace.id())
+                        .header("Authorization", "Bearer " + tokenFor(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new TaskCreateRequest("구독취소 API 태스크", null, LocalDate.now(),
+                                        LocalDate.now().plusDays(1), List.of()))))
+                .andReturn().getResponse().getContentAsString();
+        Long taskId = objectMapper.readTree(createResponse).get("id").asLong();
+        mockMvc.perform(post("/api/tasks/{id}/watch", taskId)
+                        .header("Authorization", "Bearer " + tokenFor(user)))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(delete("/api/tasks/{id}/watch", taskId)
+                        .header("Authorization", "Bearer " + tokenFor(user)))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/tasks/{id}", taskId)
+                        .header("Authorization", "Bearer " + tokenFor(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isWatching").value(false));
+    }
+
+    @Test
+    void nonMemberCannotWatchTaskViaApi() throws Exception {
+        User owner = newUser("watch-forbid-owner");
+        User outsider = newUser("watch-forbid-outsider");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "구독거부 API 워크스페이스");
+        String createResponse = mockMvc.perform(post("/api/workspaces/{id}/tasks", workspace.id())
+                        .header("Authorization", "Bearer " + tokenFor(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new TaskCreateRequest("구독거부 API 태스크", null, LocalDate.now(),
+                                        LocalDate.now().plusDays(1), List.of()))))
+                .andReturn().getResponse().getContentAsString();
+        Long taskId = objectMapper.readTree(createResponse).get("id").asLong();
+
+        mockMvc.perform(post("/api/tasks/{id}/watch", taskId)
+                        .header("Authorization", "Bearer " + tokenFor(outsider)))
+                .andExpect(status().isForbidden());
     }
 }

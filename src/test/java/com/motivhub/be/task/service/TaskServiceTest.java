@@ -38,6 +38,7 @@ import com.motivhub.be.workspace.dto.WorkspaceResponse;
 import com.motivhub.be.workspace.exception.NotWorkspaceMemberException;
 import com.motivhub.be.workspace.repository.WorkspaceMemberRepository;
 import com.motivhub.be.workspace.service.WorkspaceService;
+import jakarta.persistence.EntityManager;
 import java.time.LocalDate;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -60,6 +61,7 @@ class TaskServiceTest extends AbstractIntegrationTest {
     @Autowired private TaskCommentService taskCommentService;
     @Autowired private NotificationService notificationService;
     @Autowired private TaskActivityLogService taskActivityLogService;
+    @Autowired private EntityManager entityManager;
 
     private User newUser(String suffix) {
         return userRepository.save(User.create(
@@ -1141,5 +1143,85 @@ class TaskServiceTest extends AbstractIntegrationTest {
 
         assertThat(result).extracting(MyTaskResponse::name)
                 .containsExactly("리포트 나중 완료", "리포트 먼저 완료");
+    }
+
+    @Test
+    void watchingTaskMakesIsWatchingTrue() {
+        User user = createUniqueUser("watch-user");
+        WorkspaceResponse workspace = workspaceService.create(user.getId(), "구독 워크스페이스");
+        TaskResponse task = taskService.create(user.getId(), workspace.id(),
+                new TaskCreateRequest("구독 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+
+        assertThat(taskService.isWatching(user.getId(), task.id())).isFalse();
+
+        taskService.watch(user.getId(), task.id());
+
+        assertThat(taskService.isWatching(user.getId(), task.id())).isTrue();
+    }
+
+    @Test
+    void unwatchingTaskMakesIsWatchingFalse() {
+        User user = createUniqueUser("unwatch-user");
+        WorkspaceResponse workspace = workspaceService.create(user.getId(), "구독취소 워크스페이스");
+        TaskResponse task = taskService.create(user.getId(), workspace.id(),
+                new TaskCreateRequest("구독취소 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+        taskService.watch(user.getId(), task.id());
+
+        taskService.unwatch(user.getId(), task.id());
+
+        assertThat(taskService.isWatching(user.getId(), task.id())).isFalse();
+    }
+
+    @Test
+    void watchingSameTaskTwiceIsIdempotent() {
+        User user = createUniqueUser("watch-twice-user");
+        WorkspaceResponse workspace = workspaceService.create(user.getId(), "중복구독 워크스페이스");
+        TaskResponse task = taskService.create(user.getId(), workspace.id(),
+                new TaskCreateRequest("중복구독 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+
+        taskService.watch(user.getId(), task.id());
+        taskService.watch(user.getId(), task.id());
+
+        assertThat(taskService.isWatching(user.getId(), task.id())).isTrue();
+    }
+
+    @Test
+    void unwatchingTaskNeverWatchedDoesNotThrow() {
+        User user = createUniqueUser("unwatch-nothing-user");
+        WorkspaceResponse workspace = workspaceService.create(user.getId(), "구독안한 워크스페이스");
+        TaskResponse task = taskService.create(user.getId(), workspace.id(),
+                new TaskCreateRequest("구독안한 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+
+        taskService.unwatch(user.getId(), task.id());
+
+        assertThat(taskService.isWatching(user.getId(), task.id())).isFalse();
+    }
+
+    @Test
+    void anyWorkspaceMemberCanWatchNotJustAssigneeOrOwner() {
+        User owner = createUniqueUser("watch-owner");
+        User plainMember = createUniqueUser("watch-plain-member");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "구독권한 워크스페이스");
+        joinAsMember(workspace.id(), plainMember);
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("구독권한 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+
+        taskService.watch(plainMember.getId(), task.id());
+
+        assertThat(taskService.isWatching(plainMember.getId(), task.id())).isTrue();
+    }
+
+    @Test
+    void deletingWatchedTaskDoesNotThrow() {
+        User owner = createUniqueUser("watch-delete-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "구독삭제 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("구독삭제 태스크", null, LocalDate.now(), LocalDate.now().plusDays(1), List.of()));
+        taskService.watch(owner.getId(), task.id());
+
+        taskService.delete(owner.getId(), task.id());
+        entityManager.flush();
+
+        assertThat(taskService.isWatching(owner.getId(), task.id())).isFalse();
     }
 }
