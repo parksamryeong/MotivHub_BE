@@ -366,4 +366,135 @@ class NotificationEventListenerTest extends AbstractIntegrationTest {
 
         assertThat(notificationService.list(owner.getId(), PageRequest.of(0, 20)).getContent()).hasSize(2);
     }
+
+    @Test
+    void assigneeAddedEventNotifiesWatcherWithThirdPersonMessage() {
+        User owner = newUser("w1-owner");
+        User watcher = newUser("w1-watcher");
+        User newAssignee = newUser("w1-assignee");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "구독자 담당자지정 워크스페이스");
+        joinAsMember(workspace.id(), watcher);
+        joinAsMember(workspace.id(), newAssignee);
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("구독자 담당자지정 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+        taskService.watch(watcher.getId(), task.id());
+
+        TestTransaction.flagForCommit();
+        eventPublisher.publishEvent(new AssigneeAddedEvent(task.id(), newAssignee.getId()));
+        TestTransaction.end();
+        TestTransaction.start();
+
+        List<NotificationResponse> watcherNotifications = notificationService
+                .list(watcher.getId(), PageRequest.of(0, 20)).getContent();
+        List<NotificationResponse> assigneeNotifications = notificationService
+                .list(newAssignee.getId(), PageRequest.of(0, 20)).getContent();
+        assertThat(watcherNotifications).hasSize(1);
+        assertThat(watcherNotifications.get(0).type()).isEqualTo(NotificationType.ASSIGNEE_ADDED);
+        assertThat(watcherNotifications.get(0).message()).contains(newAssignee.getNickname());
+        assertThat(assigneeNotifications).hasSize(1);
+        assertThat(assigneeNotifications.get(0).message()).doesNotContain(newAssignee.getNickname());
+    }
+
+    @Test
+    void newAssigneeWhoIsAlsoAWatcherIsNotNotifiedTwice() {
+        User owner = newUser("w2-owner");
+        User newAssignee = newUser("w2-assignee");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "구독자중복방지 워크스페이스");
+        joinAsMember(workspace.id(), newAssignee);
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("구독자중복방지 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+        taskService.watch(newAssignee.getId(), task.id());
+
+        TestTransaction.flagForCommit();
+        eventPublisher.publishEvent(new AssigneeAddedEvent(task.id(), newAssignee.getId()));
+        TestTransaction.end();
+        TestTransaction.start();
+
+        assertThat(notificationService.list(newAssignee.getId(), PageRequest.of(0, 20)).getContent()).hasSize(1);
+    }
+
+    @Test
+    void taskCommentCreatedEventNotifiesWatcher() {
+        User owner = newUser("w3-owner");
+        User watcher = newUser("w3-watcher");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "구독자댓글 워크스페이스");
+        joinAsMember(workspace.id(), watcher);
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("구독자댓글 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+        taskService.watch(watcher.getId(), task.id());
+
+        TestTransaction.flagForCommit();
+        eventPublisher.publishEvent(new TaskCommentCreatedEvent(task.id(), owner.getId(), owner.getNickname(), "댓글 내용"));
+        TestTransaction.end();
+        TestTransaction.start();
+
+        List<NotificationResponse> notifications = notificationService
+                .list(watcher.getId(), PageRequest.of(0, 20)).getContent();
+        assertThat(notifications).hasSize(1);
+        assertThat(notifications.get(0).type()).isEqualTo(NotificationType.TASK_COMMENT_ADDED);
+    }
+
+    @Test
+    void watcherNotMentionedInCommentDoesNotGetMentionedNotification() {
+        User owner = newUser("w4-owner");
+        User watcher = newUser("w4-watcher");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "구독자멘션제외 워크스페이스");
+        joinAsMember(workspace.id(), watcher);
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("구독자멘션제외 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+        taskService.watch(watcher.getId(), task.id());
+
+        TestTransaction.flagForCommit();
+        eventPublisher.publishEvent(new TaskCommentCreatedEvent(task.id(), owner.getId(), owner.getNickname(), "그냥 일반 댓글입니다"));
+        TestTransaction.end();
+        TestTransaction.start();
+
+        List<NotificationResponse> notifications = notificationService
+                .list(watcher.getId(), PageRequest.of(0, 20)).getContent();
+        assertThat(notifications).extracting(NotificationResponse::type)
+                .containsExactly(NotificationType.TASK_COMMENT_ADDED);
+    }
+
+    @Test
+    void checklistCompletedEventNotifiesWatcher() {
+        User owner = newUser("w5-owner");
+        User watcher = newUser("w5-watcher");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "구독자체크리스트 워크스페이스");
+        joinAsMember(workspace.id(), watcher);
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("구독자체크리스트 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+        taskService.watch(watcher.getId(), task.id());
+
+        TestTransaction.flagForCommit();
+        eventPublisher.publishEvent(new ChecklistCompletedEvent(task.id()));
+        TestTransaction.end();
+        TestTransaction.start();
+
+        assertThat(notificationService.list(watcher.getId(), PageRequest.of(0, 20)).getContent()).hasSize(1);
+    }
+
+    @Test
+    void dueDateApproachingAndTaskOverdueEventsNotifyWatcher() {
+        User owner = newUser("w6-owner");
+        User watcher = newUser("w6-watcher");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "구독자마감 워크스페이스");
+        joinAsMember(workspace.id(), watcher);
+        TaskResponse approachingTask = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("구독자마감임박 태스크", null, LocalDate.now(), LocalDate.now().plusDays(2), List.of()));
+        TaskResponse overdueTask = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("구독자마감초과 태스크", null, LocalDate.now().minusDays(5), LocalDate.now().minusDays(1), List.of()));
+        taskService.watch(watcher.getId(), approachingTask.id());
+        taskService.watch(watcher.getId(), overdueTask.id());
+
+        TestTransaction.flagForCommit();
+        eventPublisher.publishEvent(new DueDateApproachingEvent(approachingTask.id()));
+        eventPublisher.publishEvent(new TaskOverdueEvent(overdueTask.id()));
+        TestTransaction.end();
+        TestTransaction.start();
+
+        List<NotificationResponse> notifications = notificationService
+                .list(watcher.getId(), PageRequest.of(0, 20)).getContent();
+        assertThat(notifications).extracting(NotificationResponse::type)
+                .containsExactlyInAnyOrder(NotificationType.DUE_DATE_APPROACHING, NotificationType.TASK_OVERDUE);
+    }
 }

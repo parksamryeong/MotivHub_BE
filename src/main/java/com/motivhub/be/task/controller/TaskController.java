@@ -60,7 +60,8 @@ public class TaskController {
     public ResponseEntity<TaskDetailResponse> getDetail(@AuthenticationPrincipal Long userId, @PathVariable Long id) {
         TaskResponse task = taskService.getDetail(userId, id);
         List<TaskChecklistItemResponse> checklistItems = taskChecklistItemService.list(userId, id);
-        return ResponseEntity.ok(TaskDetailResponse.of(task, checklistItems));
+        boolean isWatching = taskService.isWatching(userId, id);
+        return ResponseEntity.ok(TaskDetailResponse.of(task, checklistItems, isWatching));
     }
 
     @PatchMapping("/api/tasks/{id}")
@@ -113,6 +114,18 @@ public class TaskController {
     @PostMapping("/api/tasks/{id}/duplicate")
     public ResponseEntity<TaskResponse> duplicate(@AuthenticationPrincipal Long userId, @PathVariable Long id) {
         return ResponseEntity.ok(taskService.duplicate(userId, id));
+    }
+
+    @PostMapping("/api/tasks/{id}/watch")
+    public ResponseEntity<Void> watch(@AuthenticationPrincipal Long userId, @PathVariable Long id) {
+        taskService.watch(userId, id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/api/tasks/{id}/watch")
+    public ResponseEntity<Void> unwatch(@AuthenticationPrincipal Long userId, @PathVariable Long id) {
+        taskService.unwatch(userId, id);
+        return ResponseEntity.noContent().build();
     }
 
     @DeleteMapping("/api/tasks/{id}/assignees/{targetUserId}")
