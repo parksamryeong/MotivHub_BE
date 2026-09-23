@@ -603,6 +603,19 @@ class TaskServiceTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void listMineIncludesStartDate() {
+        User user = createUniqueUser("mine-startdate-user");
+        WorkspaceResponse workspace = workspaceService.create(user.getId(), "시작일 워크스페이스");
+        LocalDate startDate = LocalDate.now().plusDays(1);
+        taskService.create(user.getId(), workspace.id(),
+                new TaskCreateRequest("시작일 태스크", null, startDate, LocalDate.now().plusDays(5), List.of(user.getId())));
+
+        List<MyTaskResponse> result = taskService.listMine(user.getId());
+
+        assertThat(result).extracting(MyTaskResponse::startDate).containsExactly(startDate);
+    }
+
+    @Test
     void listMineExcludesTasksNotAssignedToUser() {
         User owner = newUser("mine-excl-owner");
         User bystander = newUser("mine-excl-bystander");
