@@ -6,11 +6,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.motivhub.be.notification.domain.NotificationTargetType;
 import com.motivhub.be.notification.domain.NotificationType;
 import com.motivhub.be.notification.dto.NotificationResponse;
+import com.motivhub.be.notification.dto.NotificationSettingResponse;
 import com.motivhub.be.notification.exception.NotificationNotFoundException;
 import com.motivhub.be.support.AbstractIntegrationTest;
 import com.motivhub.be.user.domain.SocialProvider;
 import com.motivhub.be.user.domain.User;
 import com.motivhub.be.user.repository.UserRepository;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -126,5 +128,51 @@ class NotificationServiceTest extends AbstractIntegrationTest {
 
         assertThat(notificationService.alreadyNotifiedToday(
                 recipient.getId(), NotificationType.DUE_DATE_APPROACHING, 42L)).isTrue();
+    }
+
+    @Test
+    void getSettingsDefaultsAllSixTypesToEnabled() {
+        User user = newUser("s1");
+
+        List<NotificationSettingResponse> settings = notificationService.getSettings(user.getId());
+
+        assertThat(settings).hasSize(NotificationType.values().length);
+        assertThat(settings).allMatch(NotificationSettingResponse::enabled);
+    }
+
+    @Test
+    void updateSettingDisablesOneTypeWithoutAffectingOthers() {
+        User user = newUser("s2");
+
+        notificationService.updateSetting(user.getId(), NotificationType.MENTIONED, false);
+
+        List<NotificationSettingResponse> settings = notificationService.getSettings(user.getId());
+        assertThat(settings).filteredOn(s -> s.type() == NotificationType.MENTIONED)
+                .extracting(NotificationSettingResponse::enabled).containsExactly(false);
+        assertThat(settings).filteredOn(s -> s.type() != NotificationType.MENTIONED)
+                .allMatch(NotificationSettingResponse::enabled);
+    }
+
+    @Test
+    void updateSettingTwiceOnSameTypeUpdatesInPlaceRatherThanDuplicating() {
+        User user = newUser("s3");
+
+        notificationService.updateSetting(user.getId(), NotificationType.TASK_COMMENT_ADDED, false);
+        notificationService.updateSetting(user.getId(), NotificationType.TASK_COMMENT_ADDED, true);
+
+        List<NotificationSettingResponse> settings = notificationService.getSettings(user.getId());
+        assertThat(settings).filteredOn(s -> s.type() == NotificationType.TASK_COMMENT_ADDED)
+                .extracting(NotificationSettingResponse::enabled).containsExactly(true);
+    }
+
+    @Test
+    void isEnabledReflectsStoredSettingAndDefaultsTrueWhenUnset() {
+        User user = newUser("s4");
+
+        assertThat(notificationService.isEnabled(user.getId(), NotificationType.DUE_DATE_APPROACHING)).isTrue();
+
+        notificationService.updateSetting(user.getId(), NotificationType.DUE_DATE_APPROACHING, false);
+
+        assertThat(notificationService.isEnabled(user.getId(), NotificationType.DUE_DATE_APPROACHING)).isFalse();
     }
 }
