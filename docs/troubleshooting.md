@@ -460,3 +460,23 @@
   복붙하기 전에 왜 원본 코드가 그렇게 돼 있는지부터 이해해야 한다는, 흔하지만 재확인된 교훈.
 
 ---
+
+## [2026-09-23] CI에서만 가끔 실패하는 `TaskEditRelayControllerTest` — `Thread.sleep()` 고정 대기 시간 플레이키니스
+
+- **상황**: `feature/notification-settings` PR(#17)의 CI가 "Run tests"에서 실패. 로컬(Windows)에서는
+  516개 테스트 전부 통과했는데 GitHub Actions(Ubuntu 러너)에서만 1개 실패
+  (`TaskEditRelayControllerTest.snapshotForDescriptionPersistsToTaskAndClearsBuffer`). 이 PR이 건드린
+  파일(`notification` 패키지)과는 전혀 무관한 `realtime` 패키지 테스트라 처음엔 당황스러웠음.
+- **원인**: 이 테스트는 실제 STOMP 세션으로 메시지를 보낸 뒤 `Thread.sleep(300)`/`Thread.sleep(500)`
+  같은 고정 시간만큼 기다렸다가 비동기로 반영된 DB 상태를 assert하는 구조. 로컬 개발 머신보다 느리거나
+  부하가 있는 CI 러너에서는 그 시간 안에 STOMP 메시지 처리 + DB 반영이 끝나지 않을 수 있어서 간헐적으로
+  실패한다 — PR의 실제 코드 변경과는 무관한, 원래부터 있던 테스트의 타이밍 취약성.
+- **해결**: 코드를 고치지 않고 CI job을 재실행(Re-run failed jobs)했더니 통과. 실제 회귀가 아니었음을
+  확인.
+- **결과**: CI가 실패했을 때 "내가 방금 건드린 파일과 실패한 테스트 파일이 같은 영역인가"부터 먼저
+  확인할 것 — 완전히 무관한 패키지의, 고정 `Thread.sleep()`에 의존하는 실시간/비동기 테스트라면 먼저
+  재실행부터 시도해볼 가치가 있다. 이런 테스트들은 근본적으로 견고하지 않으니, 반복적으로 이 파일에서
+  플레이키니스가 발생하면 `Thread.sleep()`을 폴링/`Awaitility` 같은 조건 기반 대기로 바꾸는 리팩토링을
+  고려할 것.
+
+---

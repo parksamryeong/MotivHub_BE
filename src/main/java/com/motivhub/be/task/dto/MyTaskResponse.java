@@ -9,6 +9,7 @@ import java.time.LocalDateTime;
 public record MyTaskResponse(
         Long taskId,
         String name,
+        LocalDate startDate,
         LocalDate dueDate,
         TaskStatus status,
         TaskPriority priority,
@@ -21,8 +22,8 @@ public record MyTaskResponse(
 
     public static MyTaskResponse of(Task task, long checklistTotal, long checklistCompleted, boolean hasComments) {
         return new MyTaskResponse(
-                task.getId(), task.getName(), task.getDueDate(), task.getStatus(), task.getPriority(),
-                task.getWorkspace().getId(), task.getWorkspace().getName(),
+                task.getId(), task.getName(), task.getStartDate(), task.getDueDate(), task.getStatus(),
+                task.getPriority(), task.getWorkspace().getId(), task.getWorkspace().getName(),
                 checklistTotal, checklistCompleted, hasComments, task.getCompletedAt());
     }
 }
