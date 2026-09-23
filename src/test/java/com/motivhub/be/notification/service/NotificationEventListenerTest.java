@@ -497,4 +497,23 @@ class NotificationEventListenerTest extends AbstractIntegrationTest {
         assertThat(notifications).extracting(NotificationResponse::type)
                 .containsExactlyInAnyOrder(NotificationType.DUE_DATE_APPROACHING, NotificationType.TASK_OVERDUE);
     }
+
+    @Test
+    void disabledNotificationTypeIsNotCreatedWhenEventFires() {
+        User owner = newUser("d1-owner");
+        User assignee = newUser("d1-assignee");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "알림설정 워크스페이스");
+        joinAsMember(workspace.id(), assignee);
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("알림설정 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5),
+                        List.of(assignee.getId())));
+        notificationService.updateSetting(assignee.getId(), NotificationType.CHECKLIST_COMPLETED, false);
+
+        TestTransaction.flagForCommit();
+        eventPublisher.publishEvent(new ChecklistCompletedEvent(task.id()));
+        TestTransaction.end();
+        TestTransaction.start();
+
+        assertThat(notificationService.list(assignee.getId(), PageRequest.of(0, 20)).getContent()).isEmpty();
+    }
 }

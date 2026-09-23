@@ -5,9 +5,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.motivhub.be.auth.jwt.JwtProvider;
 import com.motivhub.be.notification.domain.NotificationTargetType;
 import com.motivhub.be.notification.domain.NotificationType;
+import com.motivhub.be.notification.dto.NotificationSettingUpdateRequest;
 import com.motivhub.be.notification.service.NotificationService;
 import com.motivhub.be.support.AbstractIntegrationTest;
 import com.motivhub.be.user.domain.SocialProvider;
@@ -17,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.transaction.TestTransaction;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -27,6 +30,7 @@ class NotificationControllerTest extends AbstractIntegrationTest {
     @Autowired private JwtProvider jwtProvider;
     @Autowired private UserRepository userRepository;
     @Autowired private NotificationService notificationService;
+    @Autowired private ObjectMapper objectMapper;
 
     // NOTE: NotificationService.notify()는 @Transactional(propagation = REQUIRES_NEW)라서, 이 테스트
     // 메서드(외부 @Transactional)에서 방금 save한 유저는 아직 커밋되지 않은 상태다. notify()가 별도
@@ -105,4 +109,32 @@ class NotificationControllerTest extends AbstractIntegrationTest {
                         .header("Authorization", "Bearer " + tokenFor(user)))
                 .andExpect(jsonPath("$.count").value(0));
     }
+
+    @Test
+    void getSettingsReturnsAllSixTypesEnabledByDefault() throws Exception {
+        User user = newUser("settings1");
+
+        mockMvc.perform(get("/api/notifications/settings")
+                        .header("Authorization", "Bearer " + tokenFor(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(NotificationType.values().length))
+                .andExpect(jsonPath("$[?(@.enabled == false)]").isEmpty());
+    }
+
+    @Test
+    void updatingSettingViaApiPersistsAndReflectsInGetSettings() throws Exception {
+        User user = newUser("settings2");
+
+        mockMvc.perform(patch("/api/notifications/settings/{type}", NotificationType.MENTIONED)
+                        .header("Authorization", "Bearer " + tokenFor(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new NotificationSettingUpdateRequest(false))))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/notifications/settings")
+                        .header("Authorization", "Bearer " + tokenFor(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.type == 'MENTIONED')].enabled").value(false));
+    }
+
 }

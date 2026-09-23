@@ -165,6 +165,9 @@ public class NotificationEventListener {
     private void notifySafely(Long recipientId, NotificationType type, NotificationTargetType targetType,
                                Long targetId, String message) {
         try {
+            if (!notificationService.isEnabled(recipientId, type)) {
+                return;
+            }
             notificationService.notify(recipientId, type, targetType, targetId, message);
         } catch (Exception e) {
             log.warn("알림 생성 실패 - recipientId={}, type={}, targetId={}", recipientId, type, targetId, e);
