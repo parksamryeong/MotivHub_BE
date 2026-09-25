@@ -1,3 +1,12 @@
+server:
+  # nginx가 이 앱 앞에서 리버스 프록시로 붙어있는데, 실제 클라이언트는 https로 접속해도
+  # nginx->app 구간은 평문 http라서 이 설정이 없으면 서버가 스킴을 http로 착각한다.
+  # OAuth2 redirect-uri의 {baseUrl} 템플릿이 이 착각한 스킴으로 계산돼서, 실제로는
+  # https로 등록해둔 콜백 URL과 안 맞아 "redirect_uri not associated" 에러가 났었다.
+  # nginx가 이미 X-Forwarded-Proto/X-Forwarded-For 헤더를 보내주고 있으므로(nginx.conf 참고)
+  # 이 값만 켜주면 그 헤더를 신뢰해서 원래 스킴/호스트를 정확히 복원한다.
+  forward-headers-strategy: framework
+
 spring:
   application:
     name: motivhub-be
