@@ -5,6 +5,7 @@ import com.motivhub.be.auth.jwt.JwtProvider;
 import com.motivhub.be.auth.oauth.CustomOAuth2User;
 import com.motivhub.be.auth.service.RefreshTokenService;
 import com.motivhub.be.auth.service.TempAuthCodeService;
+import com.motivhub.be.global.config.FrontendUrls;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
@@ -46,6 +47,6 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
 
         String code = tempAuthCodeService.issue(new TokenPair(accessToken, refreshToken));
 
-        response.sendRedirect(frontendUrl + "/oauth/callback?code=" + code);
+        response.sendRedirect(FrontendUrls.primary(frontendUrl) + "/oauth/callback?code=" + code);
     }
 }

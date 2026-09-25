@@ -1,5 +1,6 @@
 package com.motivhub.be.workspace.service;
 
+import com.motivhub.be.global.config.FrontendUrls;
 import com.motivhub.be.workspace.domain.Workspace;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
@@ -21,7 +22,7 @@ public class WorkspaceInviteMailService {
         SimpleMailMessage message = new SimpleMailMessage();
         message.setTo(toEmail);
         message.setSubject("[MotivHub] " + workspace.getName() + " 워크스페이스에 초대되었습니다");
-        message.setText(frontendUrl + "/invite/" + token + " 링크를 눌러 참여하세요.");
+        message.setText(FrontendUrls.primary(frontendUrl) + "/invite/" + token + " 링크를 눌러 참여하세요.");
         mailSender.send(message);
     }
 }

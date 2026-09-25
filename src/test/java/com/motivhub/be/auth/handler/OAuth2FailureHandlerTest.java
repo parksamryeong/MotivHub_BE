@@ -24,4 +24,14 @@ class OAuth2FailureHandlerTest {
 
         verify(response).sendRedirect("http://localhost:3000/oauth/callback?error=oauth_failed");
     }
+
+    @Test
+    void redirectsUsingOnlyFirstOriginWhenFrontendUrlHasMultipleCommaSeparatedOrigins() throws Exception {
+        OAuth2FailureHandler handler =
+                new OAuth2FailureHandler("https://motivhub.cloud,https://motiv-hub-fe.vercel.app");
+
+        handler.onAuthenticationFailure(request, response, new BadCredentialsException("fail"));
+
+        verify(response).sendRedirect("https://motivhub.cloud/oauth/callback?error=oauth_failed");
+    }
 }

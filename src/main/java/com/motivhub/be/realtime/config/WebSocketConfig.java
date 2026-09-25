@@ -1,5 +1,6 @@
 package com.motivhub.be.realtime.config;
 
+import com.motivhub.be.global.config.FrontendUrls;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
@@ -37,7 +38,9 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
-        registry.addEndpoint("/ws").setAllowedOrigins(frontendUrl).withSockJS();
+        registry.addEndpoint("/ws")
+                .setAllowedOrigins(FrontendUrls.allOrigins(frontendUrl).toArray(new String[0]))
+                .withSockJS();
     }
 
     @Override
