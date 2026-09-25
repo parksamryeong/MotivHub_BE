@@ -1,5 +1,6 @@
 package com.motivhub.be.auth.handler;
 
+import com.motivhub.be.global.config.FrontendUrls;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
@@ -25,6 +26,6 @@ public class OAuth2FailureHandler implements AuthenticationFailureHandler {
     public void onAuthenticationFailure(HttpServletRequest request, HttpServletResponse response,
                                          AuthenticationException exception) throws IOException {
         log.warn("OAuth2 login failed: {}", exception.getMessage());
-        response.sendRedirect(frontendUrl + "/oauth/callback?error=oauth_failed");
+        response.sendRedirect(FrontendUrls.primary(frontendUrl) + "/oauth/callback?error=oauth_failed");
     }
 }

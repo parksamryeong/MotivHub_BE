@@ -4,8 +4,8 @@ import com.motivhub.be.auth.handler.OAuth2FailureHandler;
 import com.motivhub.be.auth.handler.OAuth2SuccessHandler;
 import com.motivhub.be.auth.jwt.JwtAuthenticationFilter;
 import com.motivhub.be.auth.oauth.CustomOAuth2UserService;
+import com.motivhub.be.global.config.FrontendUrls;
 import com.motivhub.be.global.exception.JwtAuthenticationEntryPoint;
-import java.util.Arrays;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -30,14 +30,8 @@ public class SecurityConfig {
 
     private final List<String> allowedOrigins;
 
-    // 콤마로 여러 origin을 받는다 - 배포 환경 전환기(예: 커스텀 도메인 연결 전 임시 Vercel 프리뷰
-    // 주소와 최종 도메인을 동시에 허용해야 하는 경우)에 여러 프론트 출처를 한꺼번에 허용할 수 있어야
-    // 한다. 앞뒤 공백은 무시하고, 빈 값은 걸러낸다.
     public SecurityConfig(@Value("${app.frontend-url}") String frontendUrl) {
-        this.allowedOrigins = Arrays.stream(frontendUrl.split(","))
-                .map(String::trim)
-                .filter(origin -> !origin.isEmpty())
-                .toList();
+        this.allowedOrigins = FrontendUrls.allOrigins(frontendUrl);
     }
 
     @Bean

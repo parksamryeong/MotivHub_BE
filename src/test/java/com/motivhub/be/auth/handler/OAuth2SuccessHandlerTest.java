@@ -52,6 +52,24 @@ class OAuth2SuccessHandlerTest {
     }
 
     @Test
+    void redirectsUsingOnlyFirstOriginWhenFrontendUrlHasMultipleCommaSeparatedOrigins() throws Exception {
+        OAuth2SuccessHandler handler = new OAuth2SuccessHandler(
+                jwtProvider, refreshTokenService, tempAuthCodeService,
+                "https://motivhub.cloud,https://motiv-hub-fe.vercel.app");
+
+        CustomOAuth2User principal = new CustomOAuth2User(10L, Map.of());
+        when(authentication.getPrincipal()).thenReturn(principal);
+        when(jwtProvider.generateAccessToken(10L)).thenReturn("access-token");
+        when(jwtProvider.generateRefreshToken(eq(10L), anyString())).thenReturn("refresh-token");
+        when(tempAuthCodeService.issue(new TokenPair("access-token", "refresh-token")))
+                .thenReturn("temp-code-123");
+
+        handler.onAuthenticationSuccess(request, response, authentication);
+
+        verify(response).sendRedirect("https://motivhub.cloud/oauth/callback?code=temp-code-123");
+    }
+
+    @Test
     void generatesDifferentDeviceIdOnEachLogin() throws Exception {
         OAuth2SuccessHandler handler = new OAuth2SuccessHandler(
                 jwtProvider, refreshTokenService, tempAuthCodeService, "http://localhost:3000");
