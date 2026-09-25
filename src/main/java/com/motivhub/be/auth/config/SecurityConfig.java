@@ -5,6 +5,7 @@ import com.motivhub.be.auth.handler.OAuth2SuccessHandler;
 import com.motivhub.be.auth.jwt.JwtAuthenticationFilter;
 import com.motivhub.be.auth.oauth.CustomOAuth2UserService;
 import com.motivhub.be.global.exception.JwtAuthenticationEntryPoint;
+import java.util.Arrays;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -27,10 +28,16 @@ public class SecurityConfig {
             "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/ws/**"
     };
 
-    private final String frontendUrl;
+    private final List<String> allowedOrigins;
 
+    // 콤마로 여러 origin을 받는다 - 배포 환경 전환기(예: 커스텀 도메인 연결 전 임시 Vercel 프리뷰
+    // 주소와 최종 도메인을 동시에 허용해야 하는 경우)에 여러 프론트 출처를 한꺼번에 허용할 수 있어야
+    // 한다. 앞뒤 공백은 무시하고, 빈 값은 걸러낸다.
     public SecurityConfig(@Value("${app.frontend-url}") String frontendUrl) {
-        this.frontendUrl = frontendUrl;
+        this.allowedOrigins = Arrays.stream(frontendUrl.split(","))
+                .map(String::trim)
+                .filter(origin -> !origin.isEmpty())
+                .toList();
     }
 
     @Bean
@@ -61,7 +68,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of(frontendUrl));
+        configuration.setAllowedOrigins(allowedOrigins);
         configuration.setAllowedMethods(List.of("GET", "POST", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
         configuration.setAllowCredentials(false);
@@ -72,7 +79,7 @@ public class SecurityConfig {
         // 별도로 credentials를 허용한다. 이 앱은 쿠키 인증을 쓰지 않으므로(JWT는 STOMP CONNECT
         // 헤더로 전달) 보안 영향은 없다.
         CorsConfiguration wsConfiguration = new CorsConfiguration();
-        wsConfiguration.setAllowedOrigins(List.of(frontendUrl));
+        wsConfiguration.setAllowedOrigins(allowedOrigins);
         wsConfiguration.setAllowedMethods(List.of("GET", "POST", "OPTIONS"));
         wsConfiguration.setAllowedHeaders(List.of("*"));
         wsConfiguration.setAllowCredentials(true);
