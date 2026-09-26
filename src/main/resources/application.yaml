@@ -6,6 +6,14 @@ server:
   # nginx가 이미 X-Forwarded-Proto/X-Forwarded-For 헤더를 보내주고 있으므로(nginx.conf 참고)
   # 이 값만 켜주면 그 헤더를 신뢰해서 원래 스킴/호스트를 정확히 복원한다.
   forward-headers-strategy: framework
+  tomcat:
+    # 기본값(threads.max=200, accept-count=100)은 순간적으로 동시 연결 시도가 ~300개를 넘으면
+    # 나머지를 즉시 "connection refused"로 거부한다(대기열도 아니고 에러도 안 남기고 그냥 거부) -
+    # 2026-09-27 부하테스트에서 VU 300~350대에서 실측으로 확인됨. 이 프로젝트가 가정하는 현실적인
+    # 동시 사용자 규모(소규모 팀 협업 도구, 수백 명 단위)에 여유를 두기 위해 올린다.
+    threads:
+      max: 400
+    accept-count: 200
 
 spring:
   application:
@@ -14,6 +22,10 @@ spring:
     url: jdbc:mysql://localhost:13306/motivhub?serverTimezone=UTC&characterEncoding=UTF-8
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:root}
+    hikari:
+      # 기본값(10)은 Tomcat 스레드 풀을 400으로 올린 뒤 실측(2026-09-27)에서 커넥션 획득 대기시간이
+      # 최대 2초까지 튀는 원인으로 확인됨 - Tomcat 한도에 가려져 있던 진짜 병목. 30으로 올려서 재검증.
+      maximum-pool-size: 30
   jpa:
     hibernate:
       ddl-auto: validate

@@ -18,7 +18,21 @@ export function setup() {
 export default function (data) {
     const token = data.tokens[Math.floor(Math.random() * data.tokens.length)];
     const headers = { Authorization: `Bearer ${token}` };
-    const res = http.get(`${BASE_URL}/api/tasks/${HEAVY_TASK_ID}`, { headers });
-    check(res, { 'GET /api/tasks/{heavyId} returns 200': (r) => r.status === 200 });
+    const roll = Math.random();
+
+    let res;
+    let label;
+    if (roll < 0.6) {
+        label = 'GET /api/tasks/{heavyId} (detail, 300 checklist items)';
+        res = http.get(`${BASE_URL}/api/tasks/${HEAVY_TASK_ID}`, { headers, tags: { name: label } });
+    } else if (roll < 0.8) {
+        label = 'GET /api/tasks/{heavyId}/comments (300 comments)';
+        res = http.get(`${BASE_URL}/api/tasks/${HEAVY_TASK_ID}/comments`, { headers, tags: { name: label } });
+    } else {
+        label = 'GET /api/tasks/{heavyId}/activities (300 activity logs)';
+        res = http.get(`${BASE_URL}/api/tasks/${HEAVY_TASK_ID}/activities`, { headers, tags: { name: label } });
+    }
+
+    check(res, { [`${label} returns 200`]: (r) => r.status === 200 });
     sleep(1);
 }
