@@ -3,6 +3,7 @@ package com.motivhub.be.task.repository;
 import com.motivhub.be.task.domain.Task;
 import com.motivhub.be.task.domain.TaskStatus;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -51,4 +52,18 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
             + "AND (:q IS NULL OR LOWER(t.name) LIKE LOWER(CONCAT('%', :q, '%'))) "
             + "ORDER BY t.completedAt DESC, t.id DESC")
     List<Task> findCompletedTasksForUser(@Param("userId") Long userId, @Param("q") String q, Pageable pageable);
+
+    @Query("SELECT new com.motivhub.be.task.repository.TaskPriorityCount(t.workspace.id, t.priority, COUNT(t)) "
+            + "FROM Task t WHERE t.workspace.id IN :workspaceIds GROUP BY t.workspace.id, t.priority")
+    List<TaskPriorityCount> countByWorkspaceIdsGroupByPriority(@Param("workspaceIds") List<Long> workspaceIds);
+
+    @Query("SELECT COUNT(t) FROM Task t WHERE t.workspace.id IN :workspaceIds "
+            + "AND t.status IN :statuses AND t.dueDate BETWEEN :from AND :to")
+    long countByWorkspaceIdsAndStatusInAndDueDateBetween(
+            @Param("workspaceIds") List<Long> workspaceIds, @Param("statuses") List<TaskStatus> statuses,
+            @Param("from") LocalDate from, @Param("to") LocalDate to);
+
+    @Query("SELECT t.completedAt FROM Task t WHERE t.workspace.id IN :workspaceIds AND t.completedAt >= :since")
+    List<LocalDateTime> findCompletedAtsByWorkspaceIdsSince(
+            @Param("workspaceIds") List<Long> workspaceIds, @Param("since") LocalDateTime since);
 }
