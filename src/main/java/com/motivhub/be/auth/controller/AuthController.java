@@ -55,7 +55,7 @@ public class AuthController {
     @PostMapping("/signup/complete")
     public ResponseEntity<TokenPair> completeSignup(@Valid @RequestBody SignupCompleteRequest request) {
         return ResponseEntity.ok(
-                signupService.completeSignup(request.token(), request.password(), request.nickname()));
+                signupService.completeSignup(request.email(), request.code(), request.password(), request.nickname()));
     }
 
     @PostMapping("/login")

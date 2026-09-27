@@ -6,7 +6,9 @@ import com.motivhub.be.auth.exception.InvalidLoginException;
 import com.motivhub.be.auth.exception.InvalidRefreshTokenException;
 import com.motivhub.be.auth.exception.InvalidVerificationTokenException;
 import com.motivhub.be.auth.exception.LogoutForbiddenException;
-import com.motivhub.be.auth.exception.VerificationTokenAlreadyUsedException;
+import com.motivhub.be.auth.exception.TooManyVerificationAttemptsException;
+import com.motivhub.be.auth.exception.TooManyVerificationRequestsException;
+import com.motivhub.be.auth.exception.VerificationCodeMismatchException;
 import com.motivhub.be.auth.exception.VerificationTokenExpiredException;
 import com.motivhub.be.file.exception.BlockedFileExtensionException;
 import com.motivhub.be.file.exception.FileTooLargeException;
@@ -265,10 +267,22 @@ public class GlobalExceptionHandler {
                 .body(ErrorResponse.of("VERIFICATION_TOKEN_EXPIRED", e.getMessage()));
     }
 
-    @ExceptionHandler(VerificationTokenAlreadyUsedException.class)
-    public ResponseEntity<ErrorResponse> handleVerificationTokenAlreadyUsed(VerificationTokenAlreadyUsedException e) {
+    @ExceptionHandler(VerificationCodeMismatchException.class)
+    public ResponseEntity<ErrorResponse> handleVerificationCodeMismatch(VerificationCodeMismatchException e) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(ErrorResponse.of("VERIFICATION_TOKEN_ALREADY_USED", e.getMessage()));
+                .body(ErrorResponse.of("VERIFICATION_CODE_MISMATCH", e.getMessage()));
+    }
+
+    @ExceptionHandler(TooManyVerificationAttemptsException.class)
+    public ResponseEntity<ErrorResponse> handleTooManyVerificationAttempts(TooManyVerificationAttemptsException e) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .body(ErrorResponse.of("TOO_MANY_VERIFICATION_ATTEMPTS", e.getMessage()));
+    }
+
+    @ExceptionHandler(TooManyVerificationRequestsException.class)
+    public ResponseEntity<ErrorResponse> handleTooManyVerificationRequests(TooManyVerificationRequestsException e) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .body(ErrorResponse.of("TOO_MANY_VERIFICATION_REQUESTS", e.getMessage()));
     }
 
     @ExceptionHandler(InvalidLoginException.class)

@@ -15,22 +15,48 @@ class EmailVerificationTokenRepositoryTest extends AbstractIntegrationTest {
     private EmailVerificationTokenRepository emailVerificationTokenRepository;
 
     @Test
-    void findByTokenReturnsMatchingToken() {
+    void findFirstByEmailAndConsumedAtIsNullOrderByIdDescReturnsUnconsumedToken() {
         EmailVerificationToken saved = emailVerificationTokenRepository.save(
-                EmailVerificationToken.create("find-by-token-test", "findme@example.com",
-                        LocalDateTime.now().plusDays(7)));
+                EmailVerificationToken.create("111111", "findme@example.com", LocalDateTime.now().plusMinutes(5)));
 
-        Optional<EmailVerificationToken> found =
-                emailVerificationTokenRepository.findByToken("find-by-token-test");
+        Optional<EmailVerificationToken> found = emailVerificationTokenRepository
+                .findFirstByEmailAndConsumedAtIsNullOrderByIdDesc("findme@example.com");
 
         assertThat(found).isPresent();
         assertThat(found.get().getId()).isEqualTo(saved.getId());
     }
 
     @Test
-    void findByTokenReturnsEmptyForUnknownToken() {
-        Optional<EmailVerificationToken> found =
-                emailVerificationTokenRepository.findByToken("no-such-token");
+    void findFirstByEmailAndConsumedAtIsNullOrderByIdDescReturnsEmptyWhenConsumed() {
+        EmailVerificationToken token = EmailVerificationToken.create(
+                "222222", "consumed@example.com", LocalDateTime.now().plusMinutes(5));
+        token.consume();
+        emailVerificationTokenRepository.save(token);
+
+        Optional<EmailVerificationToken> found = emailVerificationTokenRepository
+                .findFirstByEmailAndConsumedAtIsNullOrderByIdDesc("consumed@example.com");
+
+        assertThat(found).isEmpty();
+    }
+
+    @Test
+    void findFirstByEmailAndConsumedAtIsNullOrderByIdDescReturnsLatestWhenMultipleExist() {
+        emailVerificationTokenRepository.save(
+                EmailVerificationToken.create("333333", "multi@example.com", LocalDateTime.now().plusMinutes(5)));
+        EmailVerificationToken latest = emailVerificationTokenRepository.save(
+                EmailVerificationToken.create("444444", "multi@example.com", LocalDateTime.now().plusMinutes(5)));
+
+        Optional<EmailVerificationToken> found = emailVerificationTokenRepository
+                .findFirstByEmailAndConsumedAtIsNullOrderByIdDesc("multi@example.com");
+
+        assertThat(found).isPresent();
+        assertThat(found.get().getId()).isEqualTo(latest.getId());
+    }
+
+    @Test
+    void findFirstByEmailAndConsumedAtIsNullOrderByIdDescReturnsEmptyForUnknownEmail() {
+        Optional<EmailVerificationToken> found = emailVerificationTokenRepository
+                .findFirstByEmailAndConsumedAtIsNullOrderByIdDesc("no-such-email@example.com");
 
         assertThat(found).isEmpty();
     }

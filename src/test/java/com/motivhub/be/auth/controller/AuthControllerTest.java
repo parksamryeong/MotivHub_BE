@@ -174,15 +174,14 @@ class AuthControllerTest extends AbstractIntegrationTest {
                         .content(objectMapper.writeValueAsString(new SignupRequestVerificationRequest(email))))
                 .andExpect(status().isOk());
 
-        EmailVerificationToken token = emailVerificationTokenRepository.findAll().stream()
-                .filter(t -> t.getEmail().equals(email))
-                .findFirst()
+        EmailVerificationToken token = emailVerificationTokenRepository
+                .findFirstByEmailAndConsumedAtIsNullOrderByIdDesc(email)
                 .orElseThrow();
 
         mockMvc.perform(post("/api/auth/signup/complete")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                new SignupCompleteRequest(token.getToken(), "password123", "signupflowuser"))))
+                                new SignupCompleteRequest(email, token.getCode(), "password123", "signupflowuser"))))
                 .andExpect(status().isOk());
 
         assertThat(userRepository.findByProviderAndProviderId(SocialProvider.EMAIL, email)).isPresent();
@@ -200,76 +199,239 @@ class AuthControllerTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void completeSignupRejectsUnknownToken() throws Exception {
+    void requestingVerificationAgainInvalidatesThePreviousCode() throws Exception {
+        String email = "resend-invalidates@example.com";
+
+        mockMvc.perform(post("/api/auth/signup/request-verification")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new SignupRequestVerificationRequest(email))))
+                .andExpect(status().isOk());
+        EmailVerificationToken firstCode = emailVerificationTokenRepository
+                .findFirstByEmailAndConsumedAtIsNullOrderByIdDesc(email)
+                .orElseThrow();
+
+        mockMvc.perform(post("/api/auth/signup/request-verification")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new SignupRequestVerificationRequest(email))))
+                .andExpect(status().isOk());
+
         mockMvc.perform(post("/api/auth/signup/complete")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                new SignupCompleteRequest("no-such-token", "password123", "unknowntokenuser"))))
+                                new SignupCompleteRequest(email, firstCode.getCode(), "password123", "resendinvalidateduser"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VERIFICATION_CODE_MISMATCH"));
+    }
+
+    @Test
+    void completeSignupRejectsWhenNoCodeWasRequested() throws Exception {
+        mockMvc.perform(post("/api/auth/signup/complete")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new SignupCompleteRequest("never-requested@example.com", "123456",
+                                        "password123", "neverrequesteduser"))))
                 .andExpect(status().isNotFound());
     }
 
     @Test
-    void completeSignupRejectsExpiredToken() throws Exception {
-        EmailVerificationToken token = emailVerificationTokenRepository.save(
-                EmailVerificationToken.create("expired-token", "expired@example.com", LocalDateTime.now().minusDays(1)));
+    void completeSignupRejectsExpiredCode() throws Exception {
+        String email = "expired-code@example.com";
+        emailVerificationTokenRepository.save(
+                EmailVerificationToken.create("111111", email, LocalDateTime.now().minusMinutes(1)));
 
         mockMvc.perform(post("/api/auth/signup/complete")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                new SignupCompleteRequest(token.getToken(), "password123", "expiredtokenuser"))))
-                .andExpect(status().isBadRequest());
+                                new SignupCompleteRequest(email, "111111", "password123", "expiredcodeuser"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VERIFICATION_TOKEN_EXPIRED"));
     }
 
     @Test
-    void completeSignupRejectsAlreadyUsedToken() throws Exception {
-        EmailVerificationToken token = EmailVerificationToken.create(
-                "used-token", "used@example.com", LocalDateTime.now().plusDays(7));
-        token.consume();
-        emailVerificationTokenRepository.save(token);
+    void completeSignupRejectsWrongCode() throws Exception {
+        String email = "wrong-code@example.com";
+        emailVerificationTokenRepository.save(
+                EmailVerificationToken.create("222222", email, LocalDateTime.now().plusMinutes(5)));
 
         mockMvc.perform(post("/api/auth/signup/complete")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                new SignupCompleteRequest(token.getToken(), "password123", "usedtokenuser"))))
-                .andExpect(status().isBadRequest());
+                                new SignupCompleteRequest(email, "999999", "password123", "wrongcodeuser"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VERIFICATION_CODE_MISMATCH"));
+    }
+
+    @Test
+    void completeSignupRejectsAfterFiveFailedAttempts() throws Exception {
+        String email = "too-many-attempts@example.com";
+        emailVerificationTokenRepository.save(
+                EmailVerificationToken.create("333333", email, LocalDateTime.now().plusMinutes(5)));
+
+        for (int i = 0; i < 5; i++) {
+            mockMvc.perform(post("/api/auth/signup/complete")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(
+                                    new SignupCompleteRequest(email, "000000", "password123", "toomanyattemptsuser"))))
+                    .andExpect(status().isBadRequest());
+        }
+
+        mockMvc.perform(post("/api/auth/signup/complete")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new SignupCompleteRequest(email, "333333", "password123", "toomanyattemptsuser"))))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("TOO_MANY_VERIFICATION_ATTEMPTS"));
+    }
+
+    @Test
+    void resendDoesNotResetTheAttemptCounter() throws Exception {
+        String email = "resend-does-not-reset@example.com";
+        emailVerificationTokenRepository.save(
+                EmailVerificationToken.create("111111", email, LocalDateTime.now().plusMinutes(5)));
+        for (int i = 0; i < 5; i++) {
+            mockMvc.perform(post("/api/auth/signup/complete")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(
+                                    new SignupCompleteRequest(email, "000000", "password123", "resenduser"))))
+                    .andExpect(status().isBadRequest());
+        }
+
+        mockMvc.perform(post("/api/auth/signup/request-verification")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new SignupRequestVerificationRequest(email))))
+                .andExpect(status().isOk());
+        EmailVerificationToken newCode = emailVerificationTokenRepository
+                .findFirstByEmailAndConsumedAtIsNullOrderByIdDesc(email)
+                .orElseThrow();
+
+        mockMvc.perform(post("/api/auth/signup/complete")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new SignupCompleteRequest(email, newCode.getCode(), "password123", "resenduser"))))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("TOO_MANY_VERIFICATION_ATTEMPTS"));
+    }
+
+    @Test
+    void attemptCounterIsSharedAcrossEmailCaseVariants() throws Exception {
+        String email = "case-variant-test@example.com";
+        emailVerificationTokenRepository.save(
+                EmailVerificationToken.create("222222", email, LocalDateTime.now().plusMinutes(5)));
+
+        for (int i = 0; i < 5; i++) {
+            String variantEmail = (i % 2 == 0) ? email.toUpperCase(java.util.Locale.ROOT) : email;
+            mockMvc.perform(post("/api/auth/signup/complete")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(
+                                    new SignupCompleteRequest(variantEmail, "000000", "password123", "casevariantuser"))))
+                    .andExpect(status().isBadRequest());
+        }
+
+        mockMvc.perform(post("/api/auth/signup/complete")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new SignupCompleteRequest(
+                                email.toUpperCase(java.util.Locale.ROOT), "222222", "password123", "casevariantuser"))))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("TOO_MANY_VERIFICATION_ATTEMPTS"));
+    }
+
+    @Test
+    void attemptCounterIsSharedAcrossAccentedEmailVariants() throws Exception {
+        // MySQL의 기본 콜레이션(utf8mb4_0900_ai_ci)은 대소문자뿐 아니라 악센트/전각문자도 같은
+        // 값으로 취급한다(á == a) - Redis 키를 클라이언트가 보낸 문자열 그대로 쓰면 이 변형마다
+        // 독립된 시도 횟수를 받아서 우회할 수 있으므로, DB가 판단해준 정규 표기를 키로 써야 한다.
+        String email = "accent-variant-test@example.com";
+        String accentedVariant = "áccent-variant-test@example.com";
+        emailVerificationTokenRepository.save(
+                EmailVerificationToken.create("333333", email, LocalDateTime.now().plusMinutes(5)));
+
+        for (int i = 0; i < 5; i++) {
+            mockMvc.perform(post("/api/auth/signup/complete")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(
+                                    new SignupCompleteRequest(accentedVariant, "000000", "password123", "accentvariantuser"))))
+                    .andExpect(status().isBadRequest());
+        }
+
+        mockMvc.perform(post("/api/auth/signup/complete")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new SignupCompleteRequest(accentedVariant, "333333", "password123", "accentvariantuser"))))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("TOO_MANY_VERIFICATION_ATTEMPTS"));
+    }
+
+    @Test
+    void resendWithDifferentCaseVariantDoesNotResetTheAttemptCounter() throws Exception {
+        // 재발급 시 새 토큰 row에 "이번 요청의 원본 문자열"이 아니라 기존 토큰의 정규 표기를
+        // 그대로 이어서 저장해야 한다 - 그렇지 않으면 재발급할 때마다 정규 표기 자체가 바뀌어서
+        // completeSignup의 시도 횟수 카운터가 매번 새 Redis 키를 가리키게 되고, 변형 이메일로
+        // 재발급을 반복하는 것만으로 5회 제한이 무한히 리셋된다.
+        String email = "resend-variant-no-reset@example.com";
+        emailVerificationTokenRepository.save(
+                EmailVerificationToken.create("111111", email, LocalDateTime.now().plusMinutes(5)));
+        for (int i = 0; i < 5; i++) {
+            mockMvc.perform(post("/api/auth/signup/complete")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(
+                                    new SignupCompleteRequest(email, "000000", "password123", "resendvariantuser"))))
+                    .andExpect(status().isBadRequest());
+        }
+
+        String upperCaseVariant = email.toUpperCase(java.util.Locale.ROOT);
+        mockMvc.perform(post("/api/auth/signup/request-verification")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new SignupRequestVerificationRequest(upperCaseVariant))))
+                .andExpect(status().isOk());
+        EmailVerificationToken newCode = emailVerificationTokenRepository
+                .findFirstByEmailAndConsumedAtIsNullOrderByIdDesc(email)
+                .orElseThrow();
+
+        mockMvc.perform(post("/api/auth/signup/complete")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new SignupCompleteRequest(upperCaseVariant, newCode.getCode(), "password123", "resendvariantuser"))))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("TOO_MANY_VERIFICATION_ATTEMPTS"));
     }
 
     @Test
     void completeSignupRejectsWeakPassword() throws Exception {
-        EmailVerificationToken token = emailVerificationTokenRepository.save(
-                EmailVerificationToken.create("weak-password-token", "weakpw@example.com",
-                        LocalDateTime.now().plusDays(7)));
+        String email = "weakpw@example.com";
+        emailVerificationTokenRepository.save(
+                EmailVerificationToken.create("444444", email, LocalDateTime.now().plusMinutes(5)));
 
         mockMvc.perform(post("/api/auth/signup/complete")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                new SignupCompleteRequest(token.getToken(), "short", "weakpassworduser"))))
+                                new SignupCompleteRequest(email, "444444", "short", "weakpassworduser"))))
                 .andExpect(status().isBadRequest());
     }
 
     @Test
     void completeSignupRejectsNullPassword() throws Exception {
+        String email = "nullpw@example.com";
         EmailVerificationToken token = emailVerificationTokenRepository.save(
-                EmailVerificationToken.create("null-password-token", "nullpw@example.com",
-                        LocalDateTime.now().plusDays(7)));
+                EmailVerificationToken.create("555555", email, LocalDateTime.now().plusMinutes(5)));
 
         mockMvc.perform(post("/api/auth/signup/complete")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"token\":\"" + token.getToken() + "\",\"password\":null,\"nickname\":\"nullpassworduser\"}"))
+                        .content("{\"email\":\"" + email + "\",\"code\":\"" + token.getCode()
+                                + "\",\"password\":null,\"nickname\":\"nullpassworduser\"}"))
                 .andExpect(status().isBadRequest());
     }
 
     @Test
     void completeSignupRejectsDuplicateNickname() throws Exception {
         userRepository.save(User.create(SocialProvider.GITHUB, "dup-nick-1", "dup1@test.com", "duplicatenick", null));
-        EmailVerificationToken token = emailVerificationTokenRepository.save(
-                EmailVerificationToken.create("dup-nickname-token", "dupnick@example.com",
-                        LocalDateTime.now().plusDays(7)));
+        String email = "dupnick@example.com";
+        emailVerificationTokenRepository.save(
+                EmailVerificationToken.create("666666", email, LocalDateTime.now().plusMinutes(5)));
 
         mockMvc.perform(post("/api/auth/signup/complete")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                new SignupCompleteRequest(token.getToken(), "password123", "duplicatenick"))))
+                                new SignupCompleteRequest(email, "666666", "password123", "duplicatenick"))))
                 .andExpect(status().isConflict());
     }
 
