@@ -10,6 +10,15 @@ management:
     mail:
       enabled: false
 spring:
+  datasource:
+    hikari:
+      # AbstractIntegrationTest는 여러 Spring 컨텍스트(테스트 클래스 조합별로 캐시됨)가 Testcontainers
+      # MySQL 인스턴스 하나를 공유한다 - 컨텍스트마다 자기 풀을 최대치까지 채우려 하므로, application.yaml의
+      # dev/prod용 풀 크기(부하테스트로 정한 값, 계속 바뀔 수 있음)를 테스트가 그대로 물려받으면 전체
+      # 스위트를 다 돌릴 때 누적 커넥션 수가 MySQL 자체 max_connections를 넘어설 수 있다(실제로 2026-09-27
+      # 풀을 30->60으로 올렸을 때 이 문제로 전체 스위트의 특정 테스트 클래스들이 Flyway 연결 실패로
+      # 죽는 걸 확인함). 테스트는 운영 튜닝값과 무관하게 항상 작은 값을 명시해서 이 커플링을 끊는다.
+      maximum-pool-size: 10
   security:
     oauth2:
       client:

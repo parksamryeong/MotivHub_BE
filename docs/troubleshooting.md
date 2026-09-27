@@ -13,6 +13,36 @@
 
 ---
 
+## [2026-09-27] 부하테스트용 HikariCP 풀 크기 조정이 CI 테스트 스위트를 깨뜨림
+
+- **상황**: 쓰기 부하테스트 라운드에서 `application.yaml`의 `spring.datasource.hikari.maximum-pool-size`를
+  30 -> 60으로 올린 뒤 PR을 올렸는데, CI의 `./gradlew test`가 실패. 로컬에서 같은 테스트 클래스만
+  단독 실행하면 통과하는데, 전체 스위트(539개)를 한 번에 돌리면 매번 같은 17개 테스트
+  (`WorkspaceInviteServiceTest`, `WorkspaceInviteControllerTest`,
+  `TaskLiveCoEditingYjsStateEndToEndTest`)가 `FlywaySqlUnableToConnectToDbException` /
+  `SQLNonTransientConnectionException`으로 죽었다 - CI에서 재실행해도 정확히 같은 17개가 또 실패해서
+  "일시적 flaky"로 넘기기엔 재현성이 너무 높았다.
+- **원인 확인 과정**: `git worktree`로 `main`을 별도 경로에 체크아웃해서 같은 전체 스위트를 돌려보니
+  **100% 통과** - 우리 PR의 diff(로드테스트 스크립트 + `application.yaml`)가 원인이라는 게 확실해짐.
+  `AbstractIntegrationTest`가 Testcontainers MySQL 인스턴스 하나를 모든 통합 테스트 클래스가
+  공유하는 구조인데, 테스트 프로파일(`application-test.yaml`)이 `hikari.maximum-pool-size`를
+  오버라이드하지 않아서 운영/개발용으로 튜닝한 값(60)을 그대로 물려받고 있었다. 539개 테스트를 도는
+  동안 `@SpringBootTest` 설정 조합별로 여러 개의 별도 Spring 컨텍스트가 캐시되는데, 컨텍스트마다
+  자기 풀을 최대치까지 채우려 하면서 누적 커넥션 수가 Testcontainers MySQL 자체의 `max_connections`를
+  넘어섰고, 마침 그 시점에 컨텍스트를 새로 만드는 특정 테스트 클래스들이 항상 그 피해자가 됐다(실행
+  순서가 결정적이라 매번 같은 클래스가 걸림).
+- **해결**: `src/test/resources/application-test.yaml`에 `spring.datasource.hikari.maximum-pool-size: 10`을
+  명시적으로 추가해서, 테스트 프로파일이 `application.yaml`의 운영/개발용 튜닝값과 완전히 분리되도록
+  했다. 이제 이 값을 부하테스트 목적으로 계속 바꿔도(30, 60, 그 이상) 테스트 스위트는 영향받지 않는다.
+- **결과**: 로컬 전체 스위트 재실행 - `BUILD SUCCESSFUL`, 539개 전부 통과.
+- **교훈**: 여러 통합 테스트가 Testcontainers 인스턴스 하나를 공유하는 구조에서는, 운영/개발 설정
+  파일의 리소스 관련 값(커넥션 풀 크기 등)을 테스트 프로파일이 절대 암묵적으로 상속하게 두면 안
+  된다 - 운영 튜닝이 바뀔 때마다 테스트 스위트가 예측 불가능하게 깨질 수 있다. 진단할 때 "같은
+  테스트를 단독으로 돌리면 통과한다"는 신호가 "전체 스위트 규모에서만 나타나는 리소스 누적 문제"의
+  단서였고, `git worktree`로 base 브랜치와 직접 비교한 게 원인을 우리 PR로 확정하는 데 결정적이었다.
+
+---
+
 ## [2026-09-27] 쓰기(POST/PATCH) API 부하테스트 - 댓글 작성의 동기식 알림 팬아웃이 진짜 병목
 
 - **상황**: 지금까지 4차례 부하테스트가 전부 읽기(GET) 엔드포인트만 대상이었던 걸 마지막으로 메꿨다.
