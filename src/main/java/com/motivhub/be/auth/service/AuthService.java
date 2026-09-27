@@ -2,15 +2,19 @@ package com.motivhub.be.auth.service;
 
 import com.motivhub.be.auth.dto.TokenPair;
 import com.motivhub.be.auth.exception.InvalidCodeException;
+import com.motivhub.be.auth.exception.InvalidLoginException;
 import com.motivhub.be.auth.exception.InvalidRefreshTokenException;
 import com.motivhub.be.auth.exception.InvalidTokenException;
 import com.motivhub.be.auth.exception.LogoutForbiddenException;
 import com.motivhub.be.auth.jwt.JwtProvider;
+import com.motivhub.be.user.domain.SocialProvider;
 import com.motivhub.be.user.domain.User;
 import com.motivhub.be.user.domain.UserStatus;
 import com.motivhub.be.user.repository.UserRepository;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -22,13 +26,15 @@ public class AuthService {
     private final RefreshTokenService refreshTokenService;
     private final JwtProvider jwtProvider;
     private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
 
     public AuthService(TempAuthCodeService tempAuthCodeService, RefreshTokenService refreshTokenService,
-                        JwtProvider jwtProvider, UserRepository userRepository) {
+                        JwtProvider jwtProvider, UserRepository userRepository, PasswordEncoder passwordEncoder) {
         this.tempAuthCodeService = tempAuthCodeService;
         this.refreshTokenService = refreshTokenService;
         this.jwtProvider = jwtProvider;
         this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
     }
 
     public TokenPair exchange(String code) {
@@ -97,5 +103,20 @@ public class AuthService {
             return;
         }
         refreshTokenService.delete(tokenUserId, deviceId);
+    }
+
+    public TokenPair login(String email, String password) {
+        User user = userRepository.findByProviderAndProviderId(SocialProvider.EMAIL, email).orElse(null);
+        if (user == null || user.getStatus() == UserStatus.WITHDRAWN
+                || !passwordEncoder.matches(password, user.getPassword())) {
+            log.warn("로그인 실패: 이메일 또는 비밀번호가 올바르지 않습니다. email={}", email);
+            throw new InvalidLoginException("이메일 또는 비밀번호가 올바르지 않습니다.");
+        }
+
+        String deviceId = UUID.randomUUID().toString();
+        String accessToken = jwtProvider.generateAccessToken(user.getId());
+        String refreshToken = jwtProvider.generateRefreshToken(user.getId(), deviceId);
+        refreshTokenService.save(user.getId(), deviceId, refreshToken);
+        return new TokenPair(accessToken, refreshToken);
     }
 }
