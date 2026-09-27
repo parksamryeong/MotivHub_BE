@@ -41,6 +41,7 @@ import com.motivhub.be.workspace.exception.WorkspaceNotFoundException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.mail.MailException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -289,5 +290,16 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleInvalidLogin(InvalidLoginException e) {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                 .body(ErrorResponse.of("INVALID_LOGIN", e.getMessage()));
+    }
+
+    // 메일 발송 실패(자격증명 오류, SMTP 장애 등)를 처리기 없이 그대로 흘려보내면, 인증이
+    // 필요 없는 엔드포인트(회원가입 인증코드 발송 등)에서도 예외가 처리 안 된 채 컨테이너의
+    // 기본 /error 디스패치로 넘어가는데, /error는 SecurityConfig의 공개 경로 목록에 없어서
+    // 원래 500이어야 할 응답이 인증 필요(401)로 잘못 보이는 현상이 생긴다 - 여기서 직접 잡아서
+    // 명확한 상태 코드로 응답하면 그 디스패치 자체가 필요 없어진다.
+    @ExceptionHandler(MailException.class)
+    public ResponseEntity<ErrorResponse> handleMailException(MailException e) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(ErrorResponse.of("MAIL_SEND_FAILED", "이메일 발송에 실패했습니다. 잠시 후 다시 시도해주세요."));
     }
 }

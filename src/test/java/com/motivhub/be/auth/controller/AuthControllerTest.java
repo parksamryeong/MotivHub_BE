@@ -188,6 +188,22 @@ class AuthControllerTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void requestVerificationReturns503WhenMailSendingFails() throws Exception {
+        // 메일 발송 실패가 처리기 없이 흘러가면 컨테이너의 기본 /error 디스패치를 타게 되는데,
+        // 그 경로가 인증이 필요한 경로로 취급돼서 500 대신 401로 잘못 보이는 버그가 있었다 -
+        // GlobalExceptionHandler가 MailException을 직접 잡아 503으로 응답하는지 검증한다.
+        String email = "mail-failure-test@example.com";
+        org.mockito.Mockito.doThrow(new org.springframework.mail.MailAuthenticationException("failed to connect, no password specified?"))
+                .when(emailVerificationMailService).sendVerification(org.mockito.ArgumentMatchers.eq(email), org.mockito.ArgumentMatchers.anyString());
+
+        mockMvc.perform(post("/api/auth/signup/request-verification")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new SignupRequestVerificationRequest(email))))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("MAIL_SEND_FAILED"));
+    }
+
+    @Test
     void requestVerificationRejectsAlreadyRegisteredEmail() throws Exception {
         String email = "already-registered@example.com";
         userRepository.save(User.createEmailAccount(email, "alreadyregistered", passwordEncoder.encode("password123")));
