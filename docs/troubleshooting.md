@@ -13,6 +13,53 @@
 
 ---
 
+## [2026-09-28] 이메일 인증 기능 첫 배포 때 겹친 장애 2건 (메일 미발송 401 오표시 + Naver "unused" 값 삭제로 인한 부팅 실패)
+
+- **상황**: 이메일 인증코드 회원가입 기능을 EC2에 처음 배포(이 기능은 이번이 처음 실제 배포 -
+  Flyway 스키마가 v22에서 바로 v23~25로 올라간 것으로 확인, 로컬 테스트만 있었음). 배포 직후
+  헬스체크(`/actuator/health/readiness`, `/liveness`)는 UP이었지만, 실제로
+  `/api/auth/signup/request-verification`을 호출하면 401(`"인증이 필요합니다."`)이
+  떨어졌다 - `SecurityConfig`의 `PUBLIC_ENDPOINTS`에 `/api/auth/signup/**`이 이미 있었고
+  로컬 테스트도 전부 통과한 상태라 처음엔 원인을 알 수 없었다.
+- **원인 1 (메일 발송 실패가 401로 잘못 보임)**: 이 EC2에는 `MAIL_USERNAME`/`MAIL_PASSWORD`가
+  한 번도 설정된 적이 없었다(기존에는 actuator 헬스체크에서만 보이는 무해한 false negative로
+  기록돼 있었는데 - 이메일 인증 기능 자체가 실사용된 적이 없어서 지금까지는 문제가 안 됐던
+  것). `EmailVerificationMailService.sendVerification()`이 던지는
+  `MailAuthenticationException`을 `GlobalExceptionHandler`가 처리하지 않아서 그대로
+  흘러갔고, 처리 안 된 예외가 컨테이너의 기본 `/error` 디스패치로 넘어갔는데 `/error`는
+  `SecurityConfig`의 공개 경로 목록에 없어서 원래 500이어야 할 응답이 인증 필요(401)로
+  둔갑했다. `/api/auth/signup/complete`처럼 Bean Validation에서 먼저 걸리는 요청은 이
+  경로를 안 타서 정상(400)이었기 때문에, "왜 signup 중 하나만 401이지?"가 진단을 헷갈리게
+  만든 포인트였다 - `docker exec`로 컨테이너 안에서 직접 curl을 쏘고 그 직후 로그를
+  대조해서(`SignupService.requestVerification` → `EmailVerificationMailService.sendVerification`
+  스택트레이스) 실제 원인을 특정했다.
+- **해결 1**: `GlobalExceptionHandler`에 `MailException` 핸들러를 추가해서 503으로 명확하게
+  응답하도록 함 - 예외가 컨트롤러 밖으로 안 나가므로 `/error` 디스패치 자체가 필요 없어져서
+  근본적으로 해결됨(메일 서버가 죽어도, 자격증명이 잘못돼도 항상 503으로 정확히 보임).
+- **원인 2 (수정 배포 직후 부팅 자체가 실패)**: 위 수정을 배포하려고 EC2 `.env`에
+  `MAIL_USERNAME`/`MAIL_PASSWORD`를 추가하던 중, "네이버 로그인은 프론트에서 안 쓰니까
+  unused"라고 판단해서 `NAVER_CLIENT_ID`/`NAVER_CLIENT_SECRET` 줄을 같이 지웠다. 그런데
+  `application.yaml`은 `naver` OAuth2 client registration을 여전히 선언하고 있었고,
+  Spring Boot의 `OAuth2ClientProperties`는 선언된 모든 registration의 client-id가
+  비어있지 않은지 앱 시작 시점에 강제로 검증한다(`IllegalStateException: Client id of
+  registration 'naver' must not be empty.`) - 그 결과 컨테이너가 계속 재시작 루프에
+  빠졌다. 테스트에서는 `application-test.yaml`에 네이버용 더미 값이 항상 박혀 있어서
+  이 문제가 전혀 안 잡혔던 것도 원인 중 하나 - "안 쓰는 값"이라는 판단이 코드(YAML
+  registration 선언) 쪽에서는 여전히 "필수 값"이었던 셈.
+- **해결 2**: 임시로 `.env`에 더미 값을 넣어 즉시 복구한 뒤, `application.yaml`과
+  `application-test.yaml`에서 `naver` registration/provider 선언 자체를 완전히 제거해서
+  "프론트에서 안 쓴다 = 백엔드도 이 값이 더 이상 필요 없다"를 실제로 맞춰놨다. `NaverUserInfo`,
+  `SocialProvider.NAVER` 등 순수 Java 코드는 그대로 뒀다(OAuth2 client registration이
+  없으면 그냥 도달 불가능한 죽은 코드가 될 뿐, 별도 위험 없음).
+- **결과**: 메일 발송(실제 구글 계정 앱 비밀번호로 설정) 확인 후 재배포 → 헬스체크 UP,
+  `request-verification` 200 확인, 실제 수신함에 인증코드 메일 도착까지 확인. "환경변수가
+  비어있으면 무해하다고 알고 있던 값"이 실제로는 앱 구동을 막을 수 있다는 게 재확인된 사례 -
+  프론트에서 안 쓰는 기능이라도, 백엔드 설정(특히 Spring Boot의 `@ConfigurationProperties`
+  검증처럼 시작 시점에 강제되는 것)에 여전히 걸려있으면 "unused니까 지워도 된다"는 판단이
+  바로 장애로 이어진다.
+
+---
+
 ## [2026-09-28] 이메일 인증을 링크→6자리 코드로 바꾸면서 생긴 잠금 우회 취약점 2건
 
 - **상황**: 이미 merge된 "메일 링크 클릭" 방식의 이메일 인증을 "6자리 코드 입력"(같은 화면에서 끊김없이
