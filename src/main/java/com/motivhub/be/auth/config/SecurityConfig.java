@@ -13,6 +13,8 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
@@ -24,8 +26,8 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 public class SecurityConfig {
 
     private static final String[] PUBLIC_ENDPOINTS = {
-            "/oauth2/**", "/login/**", "/api/auth/exchange", "/api/auth/refresh", "/actuator/**",
-            "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/ws/**"
+            "/oauth2/**", "/login/**", "/api/auth/exchange", "/api/auth/refresh", "/api/auth/login",
+            "/api/auth/signup/**", "/actuator/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/ws/**"
     };
 
     private final List<String> allowedOrigins;
@@ -82,5 +84,10 @@ public class SecurityConfig {
         source.registerCorsConfiguration("/ws/**", wsConfiguration);
         source.registerCorsConfiguration("/**", configuration);
         return source;
+    }
+
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
     }
 }

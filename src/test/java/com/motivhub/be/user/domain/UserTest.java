@@ -54,4 +54,29 @@ class UserTest {
 
         assertThat(user.isWithdrawn()).isTrue();
     }
+
+    @Test
+    void createEmailAccountUsesEmailAsProviderIdAndStoresPassword() {
+        User user = User.createEmailAccount("test@example.com", "테스트닉네임", "encoded-password-hash");
+
+        assertThat(user.getProvider()).isEqualTo(SocialProvider.EMAIL);
+        assertThat(user.getProviderId()).isEqualTo("test@example.com");
+        assertThat(user.getEmail()).isEqualTo("test@example.com");
+        assertThat(user.getNickname()).isEqualTo("테스트닉네임");
+        assertThat(user.getPassword()).isEqualTo("encoded-password-hash");
+        assertThat(user.getStatus()).isEqualTo(UserStatus.ACTIVE);
+        assertThat(user.isNicknameConfigured()).isTrue();
+    }
+
+    @Test
+    void withdrawTombstonesProviderIdAndClearsPasswordForEmailAccount() {
+        User user = User.createEmailAccount("withdraw-test@example.com", "withdrawtestuser", "encoded-password-hash");
+
+        user.withdraw();
+
+        assertThat(user.getProviderId()).isNotEqualTo("withdraw-test@example.com");
+        assertThat(user.getProviderId()).startsWith("withdrawn:");
+        assertThat(user.getPassword()).isNull();
+        assertThat(user.isWithdrawn()).isTrue();
+    }
 }

@@ -1,8 +1,13 @@
 package com.motivhub.be.global.exception;
 
+import com.motivhub.be.auth.exception.EmailAlreadyRegisteredException;
 import com.motivhub.be.auth.exception.InvalidCodeException;
+import com.motivhub.be.auth.exception.InvalidLoginException;
 import com.motivhub.be.auth.exception.InvalidRefreshTokenException;
+import com.motivhub.be.auth.exception.InvalidVerificationTokenException;
 import com.motivhub.be.auth.exception.LogoutForbiddenException;
+import com.motivhub.be.auth.exception.VerificationTokenAlreadyUsedException;
+import com.motivhub.be.auth.exception.VerificationTokenExpiredException;
 import com.motivhub.be.file.exception.BlockedFileExtensionException;
 import com.motivhub.be.file.exception.FileTooLargeException;
 import com.motivhub.be.file.exception.FileUploadNotConfirmedException;
@@ -240,5 +245,35 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleNotificationNotFound(NotificationNotFoundException e) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(ErrorResponse.of("NOTIFICATION_NOT_FOUND", e.getMessage()));
+    }
+
+    @ExceptionHandler(EmailAlreadyRegisteredException.class)
+    public ResponseEntity<ErrorResponse> handleEmailAlreadyRegistered(EmailAlreadyRegisteredException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of("EMAIL_ALREADY_REGISTERED", e.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidVerificationTokenException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidVerificationToken(InvalidVerificationTokenException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("INVALID_VERIFICATION_TOKEN", e.getMessage()));
+    }
+
+    @ExceptionHandler(VerificationTokenExpiredException.class)
+    public ResponseEntity<ErrorResponse> handleVerificationTokenExpired(VerificationTokenExpiredException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("VERIFICATION_TOKEN_EXPIRED", e.getMessage()));
+    }
+
+    @ExceptionHandler(VerificationTokenAlreadyUsedException.class)
+    public ResponseEntity<ErrorResponse> handleVerificationTokenAlreadyUsed(VerificationTokenAlreadyUsedException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("VERIFICATION_TOKEN_ALREADY_USED", e.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidLoginException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidLogin(InvalidLoginException e) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(ErrorResponse.of("INVALID_LOGIN", e.getMessage()));
     }
 }

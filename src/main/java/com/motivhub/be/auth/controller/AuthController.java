@@ -1,9 +1,13 @@
 package com.motivhub.be.auth.controller;
 
 import com.motivhub.be.auth.dto.ExchangeRequest;
+import com.motivhub.be.auth.dto.LoginRequest;
 import com.motivhub.be.auth.dto.RefreshRequest;
+import com.motivhub.be.auth.dto.SignupCompleteRequest;
+import com.motivhub.be.auth.dto.SignupRequestVerificationRequest;
 import com.motivhub.be.auth.dto.TokenPair;
 import com.motivhub.be.auth.service.AuthService;
+import com.motivhub.be.auth.service.SignupService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -17,9 +21,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     private final AuthService authService;
+    private final SignupService signupService;
 
-    public AuthController(AuthService authService) {
+    public AuthController(AuthService authService, SignupService signupService) {
         this.authService = authService;
+        this.signupService = signupService;
     }
 
     @PostMapping("/exchange")
@@ -38,5 +44,22 @@ public class AuthController {
             @Valid @RequestBody RefreshRequest request) {
         authService.logout(userId, request.refreshToken());
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/signup/request-verification")
+    public ResponseEntity<Void> requestVerification(@Valid @RequestBody SignupRequestVerificationRequest request) {
+        signupService.requestVerification(request.email());
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/signup/complete")
+    public ResponseEntity<TokenPair> completeSignup(@Valid @RequestBody SignupCompleteRequest request) {
+        return ResponseEntity.ok(
+                signupService.completeSignup(request.token(), request.password(), request.nickname()));
+    }
+
+    @PostMapping("/login")
+    public ResponseEntity<TokenPair> login(@Valid @RequestBody LoginRequest request) {
+        return ResponseEntity.ok(authService.login(request.email(), request.password()));
     }
 }
