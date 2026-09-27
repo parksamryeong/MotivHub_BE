@@ -13,6 +13,82 @@
 
 ---
 
+## [2026-09-27] 부하테스트용 HikariCP 풀 크기 조정이 CI 테스트 스위트를 깨뜨림
+
+- **상황**: 쓰기 부하테스트 라운드에서 `application.yaml`의 `spring.datasource.hikari.maximum-pool-size`를
+  30 -> 60으로 올린 뒤 PR을 올렸는데, CI의 `./gradlew test`가 실패. 로컬에서 같은 테스트 클래스만
+  단독 실행하면 통과하는데, 전체 스위트(539개)를 한 번에 돌리면 매번 같은 17개 테스트
+  (`WorkspaceInviteServiceTest`, `WorkspaceInviteControllerTest`,
+  `TaskLiveCoEditingYjsStateEndToEndTest`)가 `FlywaySqlUnableToConnectToDbException` /
+  `SQLNonTransientConnectionException`으로 죽었다 - CI에서 재실행해도 정확히 같은 17개가 또 실패해서
+  "일시적 flaky"로 넘기기엔 재현성이 너무 높았다.
+- **원인 확인 과정**: `git worktree`로 `main`을 별도 경로에 체크아웃해서 같은 전체 스위트를 돌려보니
+  **100% 통과** - 우리 PR의 diff(로드테스트 스크립트 + `application.yaml`)가 원인이라는 게 확실해짐.
+  `AbstractIntegrationTest`가 Testcontainers MySQL 인스턴스 하나를 모든 통합 테스트 클래스가
+  공유하는 구조인데, 테스트 프로파일(`application-test.yaml`)이 `hikari.maximum-pool-size`를
+  오버라이드하지 않아서 운영/개발용으로 튜닝한 값(60)을 그대로 물려받고 있었다. 539개 테스트를 도는
+  동안 `@SpringBootTest` 설정 조합별로 여러 개의 별도 Spring 컨텍스트가 캐시되는데, 컨텍스트마다
+  자기 풀을 최대치까지 채우려 하면서 누적 커넥션 수가 Testcontainers MySQL 자체의 `max_connections`를
+  넘어섰고, 마침 그 시점에 컨텍스트를 새로 만드는 특정 테스트 클래스들이 항상 그 피해자가 됐다(실행
+  순서가 결정적이라 매번 같은 클래스가 걸림).
+- **해결**: `src/test/resources/application-test.yaml`에 `spring.datasource.hikari.maximum-pool-size: 10`을
+  명시적으로 추가해서, 테스트 프로파일이 `application.yaml`의 운영/개발용 튜닝값과 완전히 분리되도록
+  했다. 이제 이 값을 부하테스트 목적으로 계속 바꿔도(30, 60, 그 이상) 테스트 스위트는 영향받지 않는다.
+- **결과**: 로컬 전체 스위트 재실행 - `BUILD SUCCESSFUL`, 539개 전부 통과.
+- **교훈**: 여러 통합 테스트가 Testcontainers 인스턴스 하나를 공유하는 구조에서는, 운영/개발 설정
+  파일의 리소스 관련 값(커넥션 풀 크기 등)을 테스트 프로파일이 절대 암묵적으로 상속하게 두면 안
+  된다 - 운영 튜닝이 바뀔 때마다 테스트 스위트가 예측 불가능하게 깨질 수 있다. 진단할 때 "같은
+  테스트를 단독으로 돌리면 통과한다"는 신호가 "전체 스위트 규모에서만 나타나는 리소스 누적 문제"의
+  단서였고, `git worktree`로 base 브랜치와 직접 비교한 게 원인을 우리 PR로 확정하는 데 결정적이었다.
+
+---
+
+## [2026-09-27] 쓰기(POST/PATCH) API 부하테스트 - 댓글 작성의 동기식 알림 팬아웃이 진짜 병목
+
+- **상황**: 지금까지 4차례 부하테스트가 전부 읽기(GET) 엔드포인트만 대상이었던 걸 마지막으로 메꿨다.
+  `load-test/write-path-load-test.js`로 태스크 생성(25%)/상태변경(40%)/댓글작성(35%)을 섞어서
+  VU를 올려가며 테스트. (참고: 상태변경은 `TaskAccessPolicy.requireEditPermission`이 담당자/소유자만
+  허용해서, 시드 데이터의 담당자 배정 규칙(`태스크id 90001+n` -> 담당자 `90001+(n%10)`,
+  `90001+((n+1)%10)`)에 맞춰 토큰을 골라야 했다 - 아무 유저나 쓰면 대부분 403.)
+- **1차 결과**: VU80까지는 99.95% 성공(p95 191ms)으로 건강. VU150/250에서 실패율이 크게 튀는 걸
+  발견(처음엔 55~80%까지 봤음) - 그런데 이 수치들이 재기동 직후 순간부하로 잰 것과 이미 워밍업된
+  상태로 잰 것 사이에 널뛰기가 심해서(VU150 기준 55.78% 실패 -> 같은 조건 재실행 시 0.36% 실패)
+  콜드스타트 효과가 크게 섞여 있었다 - 재기동 직후 커넥션 풀이 채 덥혀지기도 전에 대량 동시 쓰기가
+  몰리면 유독 나쁘게 나온다는 걸 이번에 확인(이전 라운드들의 읽기 시나리오보다 쓰기 시나리오에서
+  이 효과가 훨씬 크게 나타남 - 쓰기가 커넥션을 더 오래 붙잡기 때문으로 추정).
+- **HikariCP 30 -> 60으로 올려서 재검증**: 워밍업된 상태에서도 VU250에서 47.61%가 실패해서, 풀
+  사이즈가 근본 원인이 아니라는 게 드러났다. 특히 세 가지 쓰기 분기의 실패율이 크게 갈렸다(VU250
+  워밍업 상태): 상태변경 35% 실패, 태스크생성 33% 실패인데 **댓글작성만 84% 실패** - 이 비대칭이
+  결정적 단서였다.
+- **원인**: `NotificationEventListener.onTaskCommentCreated`가 `@TransactionalEventListener
+  (AFTER_COMMIT)`이지만 `@Async`가 아니라서, 댓글의 INSERT 트랜잭션이 커밋된 뒤에도 **같은 HTTP
+  요청 스레드에서 그대로 이어서** 수신자(담당자+감시자+작성자, 작성자 본인 제외)마다
+  `NotificationService.notify()`를 순차 호출한다. 그런데 `notify()`는
+  `@Transactional(propagation = REQUIRES_NEW)`라서 호출마다 완전히 새 트랜잭션(=새 HikariCP
+  커넥션)을 연다. 즉 댓글 1건 = INSERT 트랜잭션 1개 + 수신자 수만큼의 REQUIRES_NEW 알림 트랜잭션을
+  전부 한 요청 스레드 안에서 순차 처리 - 상태변경/태스크생성(이벤트 발행은 하지만 이런 수신자별
+  팬아웃이 없음)보다 훨씬 많은 커넥션을 훨씬 오래 붙잡는다. 같은 패턴(`@TransactionalEventListener`
+  + 비동기 아님 + 수신자별 `notify()` 반복)이 `onAssigneeAdded`/`onChecklistCompleted`/
+  `onDueDateApproaching`/`onTaskOverdue`에도 동일하게 존재한다.
+- **결정**: 이건 설정값 튜닝이 아니라 실제 프로덕션 코드(알림 팬아웃을 `@Async`로 전환) + 관련
+  테스트를 바꾸는 작업이라, 이 라운드에서 바로 고치지 않고 브레인스토밍 -> 계획 -> 구현 절차를
+  제대로 거치기로 함(다음 작업으로 이어감). 이번 라운드에서는 HikariCP 풀만 30 -> 60으로 올려둔
+  채(도움은 되지만 근본 해결은 아님) 원인 분석까지만 기록.
+- **결과표**:
+
+  | VU | 상태 | 실패율 | p95 |
+  |---|---|---|---|
+  | 80 | 워밍업 | 0.05% | 191ms |
+  | 150 | 콜드스타트 직후(풀 30) | 55.78% | 59.97s |
+  | 150 | 워밍업(풀 60) | 0.36% | 808ms |
+  | 250 | 콜드스타트 직후(풀 60) | 79.92% | 59.96s |
+  | 250 | 워밍업(풀 60), 램프업 | 17.91% | 30.14s |
+  | 250 | 워밍업(풀 60), 순간버스트 | 47.61% | - |
+
+  VU250 워밍업 상태 분기별 실패율(풀 60): 상태변경 35%, 태스크생성 33%, **댓글작성 84%**.
+
+---
+
 ## [2026-09-27] 신규 집계 쿼리(My Tasks 필터/검색, 대시보드 통계) 부하테스트 - 그리고 Docker Desktop 포트포워딩 함정
 
 - **상황**: 이번 세션에서 새로 추가된 `GET /api/tasks/mine`(status/q 필터)와 `GET /api/dashboard/stats`
