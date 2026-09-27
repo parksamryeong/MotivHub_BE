@@ -5,6 +5,7 @@ services:
     image: sgrit78/motivhub-be:latest
     container_name: motivhub-prod-app
     restart: unless-stopped
+    stop_grace_period: 30s
     expose:
       - "8080"
     environment:
