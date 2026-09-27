@@ -21,8 +21,8 @@ public class EmailVerificationToken {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true, length = 36)
-    private String token;
+    @Column(nullable = false, length = 6)
+    private String code;
 
     @Column(nullable = false, length = 255)
     private String email;
@@ -33,17 +33,21 @@ public class EmailVerificationToken {
     @Column(name = "consumed_at")
     private LocalDateTime consumedAt;
 
-    private EmailVerificationToken(String token, String email, LocalDateTime expiresAt) {
-        this.token = token;
+    private EmailVerificationToken(String code, String email, LocalDateTime expiresAt) {
+        this.code = code;
         this.email = email;
         this.expiresAt = expiresAt;
     }
 
-    public static EmailVerificationToken create(String token, String email, LocalDateTime expiresAt) {
-        return new EmailVerificationToken(token, email, expiresAt);
+    public static EmailVerificationToken create(String code, String email, LocalDateTime expiresAt) {
+        return new EmailVerificationToken(code, email, expiresAt);
     }
 
     public void consume() {
         this.consumedAt = LocalDateTime.now();
+    }
+
+    public boolean matchesCode(String candidate) {
+        return this.code.equals(candidate);
     }
 }

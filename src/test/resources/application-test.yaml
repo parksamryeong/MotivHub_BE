@@ -41,3 +41,5 @@ app:
       idle-seconds: 1
       max-wait-seconds: 2
       retry-seconds: 1
+  email-verification:
+    resend-cooldown-seconds: 0
