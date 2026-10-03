@@ -2,6 +2,8 @@
 
 팀 단위 워크스페이스에서 태스크를 관리하고, 실시간 공동 편집·알림으로 함께 일하는 흐름을 지원하는 협업 툴의 백엔드입니다.
 
+🔗 **배포 사이트**: https://motivhub.cloud
+
 ## 주요 기능
 
 - **인증**: 소셜 로그인(구글/깃허브/카카오) + 이메일/비밀번호 로그인·회원가입(6자리 인증코드 방식), JWT 기반 멀티 디바이스 세션
@@ -22,28 +24,352 @@
 
 ## 아키텍처
 
-```
-클라이언트 ── Nginx(리버스 프록시, WebSocket 포함)
-                    │
-              Spring Boot
-              ├── MySQL   (영속 데이터)
-              ├── Redis   (세션/캐시/실시간 편집 버퍼)
-              └── S3      (파일 저장)
+```mermaid
+flowchart TB
+    Client["웹 클라이언트"]
+    OAuth["구글 / 카카오 / 깃허브"]
+
+    Client -->|"1 . 로그인 요청"| Nginx
+    App -->|"2 . 인증 리다이렉트"| OAuth
+    OAuth -->|"3 . 콜백"| Nginx
+    Nginx -->|HTTPS| App
+
+    subgraph App["Spring Boot 애플리케이션"]
+        direction LR
+        REST["REST API"]
+        WS["WebSocket / STOMP<br/>(실시간 공동편집, 보드 동기화, 프레즌스)"]
+        Async["비동기 처리<br/>(알림 팬아웃)"]
+    end
+
+    App --> MySQL[("MySQL<br/>Flyway 마이그레이션 관리")]
+    App --> Redis[("Redis<br/>세션 · 캐시 · 실시간 편집 버퍼")]
+    App --> S3[("AWS S3<br/>워크스페이스 파일 저장")]
+    App -.메트릭 노출.-> Prometheus["Prometheus"] --> Grafana["Grafana 대시보드"]
 ```
 
 ## 프로젝트 구조
 
+도메인별 패키지(`com.motivhub.be.<domain>`) 안에서 `controller/service/repository/domain/dto/exception`으로
+계층을 나누는 구조입니다. 진입점은 `MotivhubBeApplication.java`이고, 아래는 도메인별 전체 파일 트리입니다.
+
 ```
 com.motivhub.be
-├── auth          # 인증/인가 — OAuth2, JWT, 이메일 회원가입·로그인
-├── user          # 유저 프로필, 닉네임, 탈퇴
-├── workspace     # 워크스페이스, 멤버, 초대
-├── task          # 태스크, 체크리스트, 댓글, 활동 로그
-├── issue         # 이슈 게시판
-├── file          # 워크스페이스 파일 공유
-├── notification  # 알림 생성·조회·설정
-├── realtime      # WebSocket(STOMP), 실시간 공동편집, 프레즌스
-└── global        # 공통 설정, 예외 처리
+├── auth/                           # 인증/인가 — 소셜 로그인(OAuth2) + 이메일 인증코드 회원가입/로그인 + JWT
+│   ├── config/
+│   │   ├── RedisConfig.java
+│   │   └── SecurityConfig.java
+│   ├── controller/
+│   │   └── AuthController.java
+│   ├── domain/
+│   │   └── EmailVerificationToken.java
+│   ├── dto/
+│   │   ├── ExchangeRequest.java
+│   │   ├── LoginRequest.java
+│   │   ├── RefreshRequest.java
+│   │   ├── SignupCompleteRequest.java
+│   │   ├── SignupRequestVerificationRequest.java
+│   │   └── TokenPair.java
+│   ├── exception/
+│   │   ├── EmailAlreadyRegisteredException.java
+│   │   ├── InvalidCodeException.java
+│   │   ├── InvalidLoginException.java
+│   │   ├── InvalidRefreshTokenException.java
+│   │   ├── InvalidTokenException.java
+│   │   ├── InvalidVerificationTokenException.java
+│   │   ├── LogoutForbiddenException.java
+│   │   ├── TooManyVerificationAttemptsException.java
+│   │   ├── TooManyVerificationRequestsException.java
+│   │   ├── VerificationCodeMismatchException.java
+│   │   └── VerificationTokenExpiredException.java
+│   ├── handler/
+│   │   ├── OAuth2FailureHandler.java
+│   │   └── OAuth2SuccessHandler.java
+│   ├── jwt/
+│   │   ├── JwtAuthenticationFilter.java
+│   │   └── JwtProvider.java
+│   ├── oauth/                      # 구글/깃허브/카카오/네이버(미사용)별 UserInfo 구현체
+│   │   ├── CustomOAuth2User.java
+│   │   ├── CustomOAuth2UserService.java
+│   │   ├── GithubUserInfo.java
+│   │   ├── GoogleUserInfo.java
+│   │   ├── KakaoUserInfo.java
+│   │   ├── NaverUserInfo.java
+│   │   ├── OAuth2UserInfo.java
+│   │   └── OAuth2UserInfoFactory.java
+│   ├── repository/
+│   │   └── EmailVerificationTokenRepository.java
+│   └── service/
+│       ├── AuthService.java
+│       ├── EmailVerificationMailService.java
+│       ├── RefreshTokenService.java
+│       ├── SignupService.java
+│       ├── TempAuthCodeService.java
+│       └── VerificationAttemptLimiter.java    # Redis Lua 스크립트로 인증 시도 횟수를 원자적으로 제한
+│
+├── user/                           # 유저 프로필
+│   ├── controller/
+│   │   └── UserController.java
+│   ├── domain/
+│   │   ├── SocialProvider.java
+│   │   ├── User.java
+│   │   └── UserStatus.java
+│   ├── dto/
+│   │   ├── MyPageResponse.java
+│   │   ├── NicknameCheckResponse.java
+│   │   ├── NicknameUpdateRequest.java
+│   │   ├── UserProfileResponse.java
+│   │   └── UserSummary.java
+│   ├── exception/
+│   │   ├── InvalidNicknameException.java
+│   │   ├── NicknameDuplicateException.java
+│   │   └── UserNotFoundException.java
+│   ├── repository/
+│   │   └── UserRepository.java
+│   └── service/
+│       ├── NicknameValidator.java
+│       ├── RandomNicknameGenerator.java
+│       ├── UserRegistrationService.java
+│       └── UserService.java
+│
+├── workspace/                      # 워크스페이스/팀 — 생성·초대·멤버 권한 관리
+│   ├── controller/
+│   │   ├── WorkspaceController.java
+│   │   └── WorkspaceInviteController.java
+│   ├── domain/
+│   │   ├── Workspace.java
+│   │   ├── WorkspaceInvite.java
+│   │   ├── WorkspaceMember.java
+│   │   └── WorkspaceRole.java
+│   ├── dto/
+│   │   ├── MemberSummary.java
+│   │   ├── TransferOwnershipRequest.java
+│   │   ├── WorkspaceCreateRequest.java
+│   │   ├── WorkspaceDetailResponse.java
+│   │   ├── WorkspaceInviteCreateRequest.java
+│   │   ├── WorkspaceInviteResponse.java
+│   │   ├── WorkspaceResponse.java
+│   │   ├── WorkspaceTaskCounts.java
+│   │   └── WorkspaceUpdateRequest.java
+│   ├── event/
+│   │   └── WorkspaceMemberRemovedEvent.java
+│   ├── exception/
+│   │   ├── InvalidInviteTokenException.java
+│   │   ├── InviteExpiredException.java
+│   │   ├── InviteRevokedException.java
+│   │   ├── NotWorkspaceMemberException.java
+│   │   ├── NotWorkspaceOwnerException.java
+│   │   ├── WorkspaceLeaveRequiresTransferException.java
+│   │   ├── WorkspaceMemberNotFoundException.java
+│   │   └── WorkspaceNotFoundException.java
+│   ├── repository/
+│   │   ├── WorkspaceInviteRepository.java
+│   │   ├── WorkspaceMemberCount.java
+│   │   ├── WorkspaceMemberRepository.java
+│   │   └── WorkspaceRepository.java
+│   └── service/
+│       ├── WorkspaceInviteMailService.java
+│       ├── WorkspaceInviteService.java
+│       └── WorkspaceService.java
+│
+├── task/                           # 태스크 — 가장 큰 도메인(~70개 파일): 상태·우선순위·체크리스트·댓글·활동로그
+│   ├── controller/
+│   │   ├── TaskChecklistItemController.java
+│   │   ├── TaskCommentController.java
+│   │   ├── TaskController.java
+│   │   └── TaskNoteController.java
+│   ├── domain/
+│   │   ├── Task.java
+│   │   ├── TaskActivityAction.java
+│   │   ├── TaskActivityLog.java
+│   │   ├── TaskAssignee.java
+│   │   ├── TaskChecklistItem.java
+│   │   ├── TaskComment.java
+│   │   ├── TaskNote.java
+│   │   ├── TaskPriority.java
+│   │   ├── TaskStatus.java
+│   │   └── TaskWatcher.java
+│   ├── dto/
+│   │   ├── MyTaskResponse.java
+│   │   ├── TaskActivityLogResponse.java
+│   │   ├── TaskAssigneeRequest.java
+│   │   ├── TaskChecklistItemCreateRequest.java
+│   │   ├── TaskChecklistItemResponse.java
+│   │   ├── TaskChecklistItemUpdateRequest.java
+│   │   ├── TaskCommentCreateRequest.java
+│   │   ├── TaskCommentPromoteToIssueRequest.java    # 댓글 → 이슈 전환
+│   │   ├── TaskCommentResponse.java
+│   │   ├── TaskCommentUpdateRequest.java
+│   │   ├── TaskContentUpdateRequest.java
+│   │   ├── TaskCreateRequest.java
+│   │   ├── TaskDetailResponse.java
+│   │   ├── TaskNoteResponse.java
+│   │   ├── TaskNoteUpdateRequest.java
+│   │   ├── TaskPeriodUpdateRequest.java
+│   │   ├── TaskPriorityUpdateRequest.java
+│   │   ├── TaskResponse.java
+│   │   ├── TaskStatusUpdateRequest.java
+│   │   └── TaskYjsStateResponse.java
+│   ├── event/
+│   │   ├── AssigneeAddedEvent.java
+│   │   ├── ChecklistCompletedEvent.java
+│   │   ├── DueDateApproachingEvent.java
+│   │   ├── TaskChangeType.java
+│   │   ├── TaskChangedEvent.java
+│   │   ├── TaskCommentCreatedEvent.java
+│   │   └── TaskOverdueEvent.java
+│   ├── exception/
+│   │   ├── InvalidTaskStatusTransitionException.java
+│   │   ├── TaskChecklistItemNotFoundException.java
+│   │   ├── TaskCommentForbiddenException.java
+│   │   ├── TaskCommentNotFoundException.java
+│   │   ├── TaskEditForbiddenException.java
+│   │   ├── TaskNotFoundException.java
+│   │   └── TaskPeriodEditForbiddenException.java
+│   ├── repository/
+│   │   ├── MemberWorkloadCount.java
+│   │   ├── TaskActivityLogRepository.java
+│   │   ├── TaskAssigneeRepository.java
+│   │   ├── TaskChecklistItemRepository.java
+│   │   ├── TaskChecklistProgress.java
+│   │   ├── TaskCommentRepository.java
+│   │   ├── TaskNoteRepository.java
+│   │   ├── TaskPriorityCount.java
+│   │   ├── TaskRepository.java
+│   │   ├── TaskStatusCount.java
+│   │   └── TaskWatcherRepository.java
+│   └── service/
+│       ├── DueDateNotificationScheduler.java
+│       ├── TaskAccessPolicy.java              # 담당자·소유자 기반 권한 정책
+│       ├── TaskActivityLogService.java
+│       ├── TaskChecklistItemService.java
+│       ├── TaskCommentService.java
+│       ├── TaskExpirationScheduler.java
+│       ├── TaskNoteService.java
+│       └── TaskService.java
+│
+├── issue/                          # 이슈 게시판
+│   ├── controller/
+│   │   ├── IssueCommentController.java
+│   │   └── IssueController.java
+│   ├── domain/
+│   │   ├── Issue.java
+│   │   └── IssueComment.java
+│   ├── dto/
+│   │   ├── IssueCommentCreateRequest.java
+│   │   ├── IssueCommentResponse.java
+│   │   ├── IssueCommentUpdateRequest.java
+│   │   ├── IssueCreateRequest.java
+│   │   ├── IssueResponse.java
+│   │   └── IssueUpdateRequest.java
+│   ├── exception/
+│   │   ├── IssueCommentForbiddenException.java
+│   │   ├── IssueCommentNotFoundException.java
+│   │   ├── IssueForbiddenException.java
+│   │   └── IssueNotFoundException.java
+│   ├── repository/
+│   │   ├── IssueCommentCount.java
+│   │   ├── IssueCommentRepository.java
+│   │   └── IssueRepository.java
+│   └── service/
+│       ├── IssueCommentService.java
+│       └── IssueService.java
+│
+├── file/                           # 워크스페이스 파일 공유 (S3 presigned URL)
+│   ├── controller/
+│   │   └── WorkspaceFileController.java
+│   ├── domain/
+│   │   └── WorkspaceFile.java
+│   ├── dto/
+│   │   ├── FileDownloadResponse.java
+│   │   ├── FilePresignRequest.java
+│   │   ├── FilePresignResponse.java
+│   │   ├── WorkspaceFileCategoryUpdateRequest.java
+│   │   ├── WorkspaceFileConfirmRequest.java
+│   │   └── WorkspaceFileResponse.java
+│   ├── exception/
+│   │   ├── BlockedFileExtensionException.java
+│   │   ├── FileTooLargeException.java
+│   │   ├── FileUploadNotConfirmedException.java
+│   │   ├── WorkspaceFileForbiddenException.java
+│   │   └── WorkspaceFileNotFoundException.java
+│   ├── repository/
+│   │   └── WorkspaceFileRepository.java
+│   └── service/
+│       └── WorkspaceFileService.java          # S3 presigned URL 발급/확정
+│
+├── notification/                   # 알림 — 이벤트 기반 비동기 팬아웃
+│   ├── config/
+│   │   └── NotificationAsyncConfig.java       # 전용 비동기 스레드풀
+│   ├── controller/
+│   │   └── NotificationController.java
+│   ├── domain/
+│   │   ├── Notification.java
+│   │   ├── NotificationSetting.java
+│   │   ├── NotificationTargetType.java
+│   │   └── NotificationType.java
+│   ├── dto/
+│   │   ├── NotificationResponse.java
+│   │   ├── NotificationSettingResponse.java
+│   │   ├── NotificationSettingUpdateRequest.java
+│   │   └── UnreadCountResponse.java
+│   ├── exception/
+│   │   └── NotificationNotFoundException.java
+│   ├── repository/
+│   │   ├── NotificationRepository.java
+│   │   └── NotificationSettingRepository.java
+│   └── service/
+│       ├── NotificationEventListener.java     # 이벤트 기반 비동기 팬아웃
+│       └── NotificationService.java
+│
+├── realtime/                       # WebSocket(STOMP) 기반 실시간 기능 — 공동편집, 보드 동기화, 프레즌스
+│   ├── config/
+│   │   ├── RealtimeDestinations.java
+│   │   ├── StompPrincipal.java
+│   │   ├── TaskTopicChannelInterceptor.java
+│   │   └── WebSocketConfig.java
+│   ├── controller/
+│   │   └── TaskEditRelayController.java
+│   ├── dto/
+│   │   ├── TaskBoardChangeMessage.java
+│   │   ├── TaskChangedMessage.java
+│   │   ├── TaskEditReplayMessage.java
+│   │   ├── TaskEditSaveRequestSignal.java
+│   │   ├── TaskEditSnapshotMessage.java
+│   │   ├── TaskEditUpdateMessage.java
+│   │   └── TaskPresenceMessage.java
+│   ├── exception/
+│   │   └── StompAuthenticationException.java
+│   └── service/
+│       ├── PresenceService.java
+│       ├── TaskBoardBroadcaster.java
+│       ├── TaskChangeBroadcaster.java
+│       ├── TaskEditAutosaveScheduler.java     # CRDT 공동편집 자동저장
+│       ├── TaskEditBufferReplayListener.java
+│       ├── TaskEditBufferService.java         # CRDT 공동편집 버퍼링
+│       ├── TaskEditChannelRegistry.java
+│       ├── TaskEditLastViewerFlushListener.java
+│       ├── TaskEditableField.java
+│       ├── TaskPresenceEventListener.java
+│       └── WorkspaceMemberRemovedSessionCleaner.java
+│
+├── dashboard/                      # 워크스페이스 대시보드(통계)
+│   ├── controller/
+│   │   └── DashboardController.java
+│   ├── dto/
+│   │   └── DashboardStatsResponse.java
+│   └── service/
+│       └── DashboardService.java
+│
+└── global/                         # 공통 설정 · 예외 처리
+    ├── config/
+    │   ├── FrontendUrls.java
+    │   ├── JacksonConfig.java
+    │   ├── OpenApiConfig.java
+    │   └── S3Config.java
+    └── exception/
+        ├── ErrorResponse.java
+        ├── GlobalExceptionHandler.java
+        └── JwtAuthenticationEntryPoint.java
 ```
 
 ## API 문서
@@ -106,51 +432,3 @@ AWS_S3_ENDPOINT_OVERRIDE=http://localhost:4566 AWS_S3_BUCKET=motivhub-local \
 AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test ./gradlew bootRun
 ```
 
-### 부하테스트 (k6)
-
-```bash
-docker compose up -d
-docker compose exec -T mysql mysql -uroot -proot motivhub < load-test/seed-users.sql
-docker compose exec localstack awslocal s3 mb s3://motivhub-local
-JWT_SECRET=k6loadtestdevsecretexactly32byte \
-AWS_S3_ENDPOINT_OVERRIDE=http://localhost:4566 AWS_S3_BUCKET=motivhub-local \
-AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test \
-GOOGLE_CLIENT_ID=dummy GOOGLE_CLIENT_SECRET=dummy \
-GITHUB_CLIENT_ID=dummy GITHUB_CLIENT_SECRET=dummy \
-KAKAO_CLIENT_ID=dummy KAKAO_CLIENT_SECRET=dummy \
-./gradlew bootRun
-k6 run -e JWT_SECRET=k6loadtestdevsecretexactly32byte load-test/protected-api-load-test.js
-```
-
-> `bootRun`은 위 "로컬 실행" 섹션의 필수 환경 변수(OAuth 클라이언트, `JWT_SECRET`)를 전부 요구하고, 파일함 기능 도입 이후로는 `AWS_S3_BUCKET`도 기동 시점에 `WorkspaceFileService`가 검증한다 — 빠뜨리면 `bootRun`이 즉시 실패한다.
-
-> 위 "로컬 실행"의 `JWT_SECRET`은 32자 이상이면 되지만, 부하테스트에서는 반드시 이 값을 정확히 그대로 사용해야 한다. `Keys.hmacShaKeyFor()`가 시크릿 바이트 길이로 서명 알고리즘(HS256/384/512)을 정하기 때문에, k6와 앱이 다른 값을 쓰면 토큰이 401로 거부된다.
-
-부하를 주는 동안 `http://localhost:13000`의 Grafana 대시보드에서 TPS/p95/JVM 힙/HikariCP 커넥션 변화를 관찰할 수 있다.
-
-### 부하테스트 확장 — 읽기 위주 신규 기능 API
-
-워크스페이스 태스크/파일함/이슈게시판까지 포함한 확장 시나리오. 위 "부하테스트(k6)"의 인프라 기동·시드
-유저·앱 기동을 그대로 마친 뒤, 시드 데이터를 하나 더 넣고 두 시나리오를 실행한다.
-
-```bash
-docker compose exec -T mysql mysql -uroot -proot motivhub < load-test/seed-read-heavy-data.sql
-
-# K6_WEB_DASHBOARD=true를 붙이면 실행 중 http://127.0.0.1:5665 에서 k6 자체 라이브 대시보드(TPS/응답시간/VU)를
-# 볼 수 있다. http://localhost:13000(Grafana, admin/admin)과 나란히 열어두면 클라이언트/서버 양쪽을 동시에 관찰 가능.
-
-mkdir -p load-test/results
-
-# 시나리오 1: 일반 혼합 (태스크 목록/상세, 파일함 목록, 이슈 목록/상세) — VU 10 -> 20 -> 30, 레벨별 1분씩
-K6_WEB_DASHBOARD=true k6 run -u 10 -d 1m -e JWT_SECRET=k6loadtestdevsecretexactly32byte load-test/mixed-read-load-test.js --summary-export=load-test/results/mixed-vu10.json
-K6_WEB_DASHBOARD=true k6 run -u 20 -d 1m -e JWT_SECRET=k6loadtestdevsecretexactly32byte load-test/mixed-read-load-test.js --summary-export=load-test/results/mixed-vu20.json
-K6_WEB_DASHBOARD=true k6 run -u 30 -d 1m -e JWT_SECRET=k6loadtestdevsecretexactly32byte load-test/mixed-read-load-test.js --summary-export=load-test/results/mixed-vu30.json
-
-# 시나리오 2: 극단 케이스(체크리스트/댓글/활동로그 300개씩 달린 태스크 상세만) — VU 5 -> 10 -> 15
-K6_WEB_DASHBOARD=true k6 run -u 5  -d 1m -e JWT_SECRET=k6loadtestdevsecretexactly32byte load-test/heavy-task-stress-test.js --summary-export=load-test/results/heavy-vu5.json
-K6_WEB_DASHBOARD=true k6 run -u 10 -d 1m -e JWT_SECRET=k6loadtestdevsecretexactly32byte load-test/heavy-task-stress-test.js --summary-export=load-test/results/heavy-vu10.json
-K6_WEB_DASHBOARD=true k6 run -u 15 -d 1m -e JWT_SECRET=k6loadtestdevsecretexactly32byte load-test/heavy-task-stress-test.js --summary-export=load-test/results/heavy-vu15.json
-```
-
-레벨을 하나씩 올려가며 실패율/p95가 어떻게 변하는지 비교한다 — 실패율이 0%를 벗어나거나 p95가 전
-단계 대비 2배 이상 뛰면 그 지점을 병목 시작점으로 본다. 발견 사항은 `docs/troubleshooting.md`에 기록한다.
