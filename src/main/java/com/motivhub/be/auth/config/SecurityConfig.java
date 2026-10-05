@@ -27,7 +27,8 @@ public class SecurityConfig {
 
     private static final String[] PUBLIC_ENDPOINTS = {
             "/oauth2/**", "/login/**", "/api/auth/exchange", "/api/auth/refresh", "/api/auth/login",
-            "/api/auth/signup/**", "/actuator/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/ws/**"
+            "/api/auth/signup/**", "/api/auth/password-reset/**", "/actuator/**", "/v3/api-docs/**",
+            "/swagger-ui/**", "/swagger-ui.html", "/ws/**"
     };
 
     private final List<String> allowedOrigins;

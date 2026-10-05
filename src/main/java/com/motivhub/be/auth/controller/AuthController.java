@@ -2,11 +2,14 @@ package com.motivhub.be.auth.controller;
 
 import com.motivhub.be.auth.dto.ExchangeRequest;
 import com.motivhub.be.auth.dto.LoginRequest;
+import com.motivhub.be.auth.dto.PasswordResetCompleteRequest;
+import com.motivhub.be.auth.dto.PasswordResetRequestRequest;
 import com.motivhub.be.auth.dto.RefreshRequest;
 import com.motivhub.be.auth.dto.SignupCompleteRequest;
 import com.motivhub.be.auth.dto.SignupRequestVerificationRequest;
 import com.motivhub.be.auth.dto.TokenPair;
 import com.motivhub.be.auth.service.AuthService;
+import com.motivhub.be.auth.service.PasswordResetService;
 import com.motivhub.be.auth.service.SignupService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
@@ -22,10 +25,12 @@ public class AuthController {
 
     private final AuthService authService;
     private final SignupService signupService;
+    private final PasswordResetService passwordResetService;
 
-    public AuthController(AuthService authService, SignupService signupService) {
+    public AuthController(AuthService authService, SignupService signupService, PasswordResetService passwordResetService) {
         this.authService = authService;
         this.signupService = signupService;
+        this.passwordResetService = passwordResetService;
     }
 
     @PostMapping("/exchange")
@@ -61,5 +66,17 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<TokenPair> login(@Valid @RequestBody LoginRequest request) {
         return ResponseEntity.ok(authService.login(request.email(), request.password()));
+    }
+
+    @PostMapping("/password-reset/request")
+    public ResponseEntity<Void> requestPasswordReset(@Valid @RequestBody PasswordResetRequestRequest request) {
+        passwordResetService.requestReset(request.email());
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/password-reset/complete")
+    public ResponseEntity<Void> completePasswordReset(@Valid @RequestBody PasswordResetCompleteRequest request) {
+        passwordResetService.completeReset(request.email(), request.code(), request.newPassword());
+        return ResponseEntity.ok().build();
     }
 }

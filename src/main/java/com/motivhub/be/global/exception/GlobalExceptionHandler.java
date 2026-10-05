@@ -3,9 +3,13 @@ package com.motivhub.be.global.exception;
 import com.motivhub.be.auth.exception.EmailAlreadyRegisteredException;
 import com.motivhub.be.auth.exception.InvalidCodeException;
 import com.motivhub.be.auth.exception.InvalidLoginException;
+import com.motivhub.be.auth.exception.InvalidPasswordResetTokenException;
 import com.motivhub.be.auth.exception.InvalidRefreshTokenException;
 import com.motivhub.be.auth.exception.InvalidVerificationTokenException;
 import com.motivhub.be.auth.exception.LogoutForbiddenException;
+import com.motivhub.be.auth.exception.PasswordResetCodeMismatchException;
+import com.motivhub.be.auth.exception.PasswordResetTokenExpiredException;
+import com.motivhub.be.auth.exception.TooManyPasswordResetAttemptsException;
 import com.motivhub.be.auth.exception.TooManyVerificationAttemptsException;
 import com.motivhub.be.auth.exception.TooManyVerificationRequestsException;
 import com.motivhub.be.auth.exception.VerificationCodeMismatchException;
@@ -290,6 +294,30 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleInvalidLogin(InvalidLoginException e) {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                 .body(ErrorResponse.of("INVALID_LOGIN", e.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidPasswordResetTokenException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidPasswordResetToken(InvalidPasswordResetTokenException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("INVALID_PASSWORD_RESET_TOKEN", e.getMessage()));
+    }
+
+    @ExceptionHandler(PasswordResetTokenExpiredException.class)
+    public ResponseEntity<ErrorResponse> handlePasswordResetTokenExpired(PasswordResetTokenExpiredException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("PASSWORD_RESET_TOKEN_EXPIRED", e.getMessage()));
+    }
+
+    @ExceptionHandler(PasswordResetCodeMismatchException.class)
+    public ResponseEntity<ErrorResponse> handlePasswordResetCodeMismatch(PasswordResetCodeMismatchException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("PASSWORD_RESET_CODE_MISMATCH", e.getMessage()));
+    }
+
+    @ExceptionHandler(TooManyPasswordResetAttemptsException.class)
+    public ResponseEntity<ErrorResponse> handleTooManyPasswordResetAttempts(TooManyPasswordResetAttemptsException e) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .body(ErrorResponse.of("TOO_MANY_PASSWORD_RESET_ATTEMPTS", e.getMessage()));
     }
 
     // 메일 발송 실패(자격증명 오류, SMTP 장애 등)를 처리기 없이 그대로 흘려보내면, 인증이

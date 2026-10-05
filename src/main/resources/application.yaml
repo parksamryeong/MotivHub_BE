@@ -88,6 +88,8 @@ app:
       retry-seconds: 2
   email-verification:
     resend-cooldown-seconds: 30
+  password-reset:
+    resend-cooldown-seconds: 30
   realtime:
     presence:
       debounce-window-ms: 200
