@@ -88,6 +88,10 @@ app:
       retry-seconds: 2
   email-verification:
     resend-cooldown-seconds: 30
+  realtime:
+    presence:
+      debounce-window-ms: 200
+      poll-interval-ms: 100
 
 # Swagger/OpenAPI는 기본적으로 비활성화 (보안-우선 원칙: 프로덕션 환경에 문서 노출 방지)
 # 로컬 개발 환경에서만 활성화하려면 SWAGGER_ENABLED=true 환경변수 설정
