@@ -47,329 +47,112 @@ flowchart TB
     App -.메트릭 노출.-> Prometheus["Prometheus"] --> Grafana["Grafana 대시보드"]
 ```
 
+## CI/CD
+
+main에 머지되면 GitHub Actions가 테스트 → Docker 이미지 빌드/푸시 → EC2 배포까지 자동으로 수행합니다.
+
+```mermaid
+flowchart LR
+    Push["main에 push(머지)"] --> Test["test job<br/>./gradlew test"]
+    Test -->|통과| Build["Docker 이미지 빌드<br/>:latest + 커밋 SHA 태그"]
+    Build --> Hub["Docker Hub 푸시"]
+    Hub --> SSH["EC2 SSH 접속"]
+    SSH --> Restart["이미지 pull + 컨테이너 재시작"]
+    Restart --> Health["헬스체크 재시도<br/>(5초 간격, 최대 10회)"]
+    Health -->|실패| Fail["워크플로우 실패<br/>— 수동 개입"]
+    Health -->|성공| Done["배포 완료"]
+```
+
+- PR에서는 `test` job만 실행됩니다 — 배포는 main에 직접 push(=머지)될 때만 트리거됩니다.
+- 이미지 태그는 `:latest`와 커밋 SHA 둘 다 붙여서, 문제가 생기면 특정 커밋의 이미지로 수동 롤백할 수 있습니다.
+- 자동 롤백은 없습니다 — 헬스체크가 실패하면 워크플로우가 실패 상태로 끝나고 직접 확인합니다.
+- 워크플로우 정의: [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
+
 ## 프로젝트 구조
 
 도메인별 패키지(`com.motivhub.be.<domain>`) 안에서 `controller/service/repository/domain/dto/exception`으로
-계층을 나누는 구조입니다. 진입점은 `MotivhubBeApplication.java`이고, 아래는 도메인별 전체 파일 트리입니다.
+계층을 나누는 구조입니다. 진입점은 `MotivhubBeApplication.java`입니다.
 
 ```
 com.motivhub.be
-├── auth/                           # 인증/인가 — 소셜 로그인(OAuth2) + 이메일 인증코드 회원가입/로그인 + JWT
+├── auth/                           # 인증/인가 — 소셜 로그인(OAuth2) + 이메일 인증코드 회원가입/로그인/비밀번호 재설정 + JWT
 │   ├── config/
-│   │   ├── RedisConfig.java
-│   │   └── SecurityConfig.java
 │   ├── controller/
-│   │   └── AuthController.java
 │   ├── domain/
-│   │   └── EmailVerificationToken.java
 │   ├── dto/
-│   │   ├── ExchangeRequest.java
-│   │   ├── LoginRequest.java
-│   │   ├── RefreshRequest.java
-│   │   ├── SignupCompleteRequest.java
-│   │   ├── SignupRequestVerificationRequest.java
-│   │   └── TokenPair.java
 │   ├── exception/
-│   │   ├── EmailAlreadyRegisteredException.java
-│   │   ├── InvalidCodeException.java
-│   │   ├── InvalidLoginException.java
-│   │   ├── InvalidRefreshTokenException.java
-│   │   ├── InvalidTokenException.java
-│   │   ├── InvalidVerificationTokenException.java
-│   │   ├── LogoutForbiddenException.java
-│   │   ├── TooManyVerificationAttemptsException.java
-│   │   ├── TooManyVerificationRequestsException.java
-│   │   ├── VerificationCodeMismatchException.java
-│   │   └── VerificationTokenExpiredException.java
 │   ├── handler/
-│   │   ├── OAuth2FailureHandler.java
-│   │   └── OAuth2SuccessHandler.java
 │   ├── jwt/
-│   │   ├── JwtAuthenticationFilter.java
-│   │   └── JwtProvider.java
 │   ├── oauth/                      # 구글/깃허브/카카오/네이버(미사용)별 UserInfo 구현체
-│   │   ├── CustomOAuth2User.java
-│   │   ├── CustomOAuth2UserService.java
-│   │   ├── GithubUserInfo.java
-│   │   ├── GoogleUserInfo.java
-│   │   ├── KakaoUserInfo.java
-│   │   ├── NaverUserInfo.java
-│   │   ├── OAuth2UserInfo.java
-│   │   └── OAuth2UserInfoFactory.java
 │   ├── repository/
-│   │   └── EmailVerificationTokenRepository.java
 │   └── service/
-│       ├── AuthService.java
-│       ├── EmailVerificationMailService.java
-│       ├── RefreshTokenService.java
-│       ├── SignupService.java
-│       ├── TempAuthCodeService.java
-│       └── VerificationAttemptLimiter.java    # Redis Lua 스크립트로 인증 시도 횟수를 원자적으로 제한
 │
 ├── user/                           # 유저 프로필
 │   ├── controller/
-│   │   └── UserController.java
 │   ├── domain/
-│   │   ├── SocialProvider.java
-│   │   ├── User.java
-│   │   └── UserStatus.java
 │   ├── dto/
-│   │   ├── MyPageResponse.java
-│   │   ├── NicknameCheckResponse.java
-│   │   ├── NicknameUpdateRequest.java
-│   │   ├── UserProfileResponse.java
-│   │   └── UserSummary.java
 │   ├── exception/
-│   │   ├── InvalidNicknameException.java
-│   │   ├── NicknameDuplicateException.java
-│   │   └── UserNotFoundException.java
 │   ├── repository/
-│   │   └── UserRepository.java
 │   └── service/
-│       ├── NicknameValidator.java
-│       ├── RandomNicknameGenerator.java
-│       ├── UserRegistrationService.java
-│       └── UserService.java
 │
 ├── workspace/                      # 워크스페이스/팀 — 생성·초대·멤버 권한 관리
 │   ├── controller/
-│   │   ├── WorkspaceController.java
-│   │   └── WorkspaceInviteController.java
 │   ├── domain/
-│   │   ├── Workspace.java
-│   │   ├── WorkspaceInvite.java
-│   │   ├── WorkspaceMember.java
-│   │   └── WorkspaceRole.java
 │   ├── dto/
-│   │   ├── MemberSummary.java
-│   │   ├── TransferOwnershipRequest.java
-│   │   ├── WorkspaceCreateRequest.java
-│   │   ├── WorkspaceDetailResponse.java
-│   │   ├── WorkspaceInviteCreateRequest.java
-│   │   ├── WorkspaceInviteResponse.java
-│   │   ├── WorkspaceResponse.java
-│   │   ├── WorkspaceTaskCounts.java
-│   │   └── WorkspaceUpdateRequest.java
 │   ├── event/
-│   │   └── WorkspaceMemberRemovedEvent.java
 │   ├── exception/
-│   │   ├── InvalidInviteTokenException.java
-│   │   ├── InviteExpiredException.java
-│   │   ├── InviteRevokedException.java
-│   │   ├── NotWorkspaceMemberException.java
-│   │   ├── NotWorkspaceOwnerException.java
-│   │   ├── WorkspaceLeaveRequiresTransferException.java
-│   │   ├── WorkspaceMemberNotFoundException.java
-│   │   └── WorkspaceNotFoundException.java
 │   ├── repository/
-│   │   ├── WorkspaceInviteRepository.java
-│   │   ├── WorkspaceMemberCount.java
-│   │   ├── WorkspaceMemberRepository.java
-│   │   └── WorkspaceRepository.java
 │   └── service/
-│       ├── WorkspaceInviteMailService.java
-│       ├── WorkspaceInviteService.java
-│       └── WorkspaceService.java
 │
-├── task/                           # 태스크 — 가장 큰 도메인(~70개 파일): 상태·우선순위·체크리스트·댓글·활동로그
+├── task/                           # 태스크 — 가장 큰 도메인: 상태·우선순위·체크리스트·댓글·활동로그
 │   ├── controller/
-│   │   ├── TaskChecklistItemController.java
-│   │   ├── TaskCommentController.java
-│   │   ├── TaskController.java
-│   │   └── TaskNoteController.java
 │   ├── domain/
-│   │   ├── Task.java
-│   │   ├── TaskActivityAction.java
-│   │   ├── TaskActivityLog.java
-│   │   ├── TaskAssignee.java
-│   │   ├── TaskChecklistItem.java
-│   │   ├── TaskComment.java
-│   │   ├── TaskNote.java
-│   │   ├── TaskPriority.java
-│   │   ├── TaskStatus.java
-│   │   └── TaskWatcher.java
 │   ├── dto/
-│   │   ├── MyTaskResponse.java
-│   │   ├── TaskActivityLogResponse.java
-│   │   ├── TaskAssigneeRequest.java
-│   │   ├── TaskChecklistItemCreateRequest.java
-│   │   ├── TaskChecklistItemResponse.java
-│   │   ├── TaskChecklistItemUpdateRequest.java
-│   │   ├── TaskCommentCreateRequest.java
-│   │   ├── TaskCommentPromoteToIssueRequest.java    # 댓글 → 이슈 전환
-│   │   ├── TaskCommentResponse.java
-│   │   ├── TaskCommentUpdateRequest.java
-│   │   ├── TaskContentUpdateRequest.java
-│   │   ├── TaskCreateRequest.java
-│   │   ├── TaskDetailResponse.java
-│   │   ├── TaskNoteResponse.java
-│   │   ├── TaskNoteUpdateRequest.java
-│   │   ├── TaskPeriodUpdateRequest.java
-│   │   ├── TaskPriorityUpdateRequest.java
-│   │   ├── TaskResponse.java
-│   │   ├── TaskStatusUpdateRequest.java
-│   │   └── TaskYjsStateResponse.java
 │   ├── event/
-│   │   ├── AssigneeAddedEvent.java
-│   │   ├── ChecklistCompletedEvent.java
-│   │   ├── DueDateApproachingEvent.java
-│   │   ├── TaskChangeType.java
-│   │   ├── TaskChangedEvent.java
-│   │   ├── TaskCommentCreatedEvent.java
-│   │   └── TaskOverdueEvent.java
 │   ├── exception/
-│   │   ├── InvalidTaskStatusTransitionException.java
-│   │   ├── TaskChecklistItemNotFoundException.java
-│   │   ├── TaskCommentForbiddenException.java
-│   │   ├── TaskCommentNotFoundException.java
-│   │   ├── TaskEditForbiddenException.java
-│   │   ├── TaskNotFoundException.java
-│   │   └── TaskPeriodEditForbiddenException.java
 │   ├── repository/
-│   │   ├── MemberWorkloadCount.java
-│   │   ├── TaskActivityLogRepository.java
-│   │   ├── TaskAssigneeRepository.java
-│   │   ├── TaskChecklistItemRepository.java
-│   │   ├── TaskChecklistProgress.java
-│   │   ├── TaskCommentRepository.java
-│   │   ├── TaskNoteRepository.java
-│   │   ├── TaskPriorityCount.java
-│   │   ├── TaskRepository.java
-│   │   ├── TaskStatusCount.java
-│   │   └── TaskWatcherRepository.java
 │   └── service/
-│       ├── DueDateNotificationScheduler.java
-│       ├── TaskAccessPolicy.java              # 담당자·소유자 기반 권한 정책
-│       ├── TaskActivityLogService.java
-│       ├── TaskChecklistItemService.java
-│       ├── TaskCommentService.java
-│       ├── TaskExpirationScheduler.java
-│       ├── TaskNoteService.java
-│       └── TaskService.java
 │
 ├── issue/                          # 이슈 게시판
 │   ├── controller/
-│   │   ├── IssueCommentController.java
-│   │   └── IssueController.java
 │   ├── domain/
-│   │   ├── Issue.java
-│   │   └── IssueComment.java
 │   ├── dto/
-│   │   ├── IssueCommentCreateRequest.java
-│   │   ├── IssueCommentResponse.java
-│   │   ├── IssueCommentUpdateRequest.java
-│   │   ├── IssueCreateRequest.java
-│   │   ├── IssueResponse.java
-│   │   └── IssueUpdateRequest.java
 │   ├── exception/
-│   │   ├── IssueCommentForbiddenException.java
-│   │   ├── IssueCommentNotFoundException.java
-│   │   ├── IssueForbiddenException.java
-│   │   └── IssueNotFoundException.java
 │   ├── repository/
-│   │   ├── IssueCommentCount.java
-│   │   ├── IssueCommentRepository.java
-│   │   └── IssueRepository.java
 │   └── service/
-│       ├── IssueCommentService.java
-│       └── IssueService.java
 │
 ├── file/                           # 워크스페이스 파일 공유 (S3 presigned URL)
 │   ├── controller/
-│   │   └── WorkspaceFileController.java
 │   ├── domain/
-│   │   └── WorkspaceFile.java
 │   ├── dto/
-│   │   ├── FileDownloadResponse.java
-│   │   ├── FilePresignRequest.java
-│   │   ├── FilePresignResponse.java
-│   │   ├── WorkspaceFileCategoryUpdateRequest.java
-│   │   ├── WorkspaceFileConfirmRequest.java
-│   │   └── WorkspaceFileResponse.java
 │   ├── exception/
-│   │   ├── BlockedFileExtensionException.java
-│   │   ├── FileTooLargeException.java
-│   │   ├── FileUploadNotConfirmedException.java
-│   │   ├── WorkspaceFileForbiddenException.java
-│   │   └── WorkspaceFileNotFoundException.java
 │   ├── repository/
-│   │   └── WorkspaceFileRepository.java
 │   └── service/
-│       └── WorkspaceFileService.java          # S3 presigned URL 발급/확정
 │
 ├── notification/                   # 알림 — 이벤트 기반 비동기 팬아웃
 │   ├── config/
-│   │   └── NotificationAsyncConfig.java       # 전용 비동기 스레드풀
 │   ├── controller/
-│   │   └── NotificationController.java
 │   ├── domain/
-│   │   ├── Notification.java
-│   │   ├── NotificationSetting.java
-│   │   ├── NotificationTargetType.java
-│   │   └── NotificationType.java
 │   ├── dto/
-│   │   ├── NotificationResponse.java
-│   │   ├── NotificationSettingResponse.java
-│   │   ├── NotificationSettingUpdateRequest.java
-│   │   └── UnreadCountResponse.java
 │   ├── exception/
-│   │   └── NotificationNotFoundException.java
 │   ├── repository/
-│   │   ├── NotificationRepository.java
-│   │   └── NotificationSettingRepository.java
 │   └── service/
-│       ├── NotificationEventListener.java     # 이벤트 기반 비동기 팬아웃
-│       └── NotificationService.java
 │
 ├── realtime/                       # WebSocket(STOMP) 기반 실시간 기능 — 공동편집, 보드 동기화, 프레즌스
 │   ├── config/
-│   │   ├── RealtimeDestinations.java
-│   │   ├── StompPrincipal.java
-│   │   ├── TaskTopicChannelInterceptor.java
-│   │   └── WebSocketConfig.java
 │   ├── controller/
-│   │   └── TaskEditRelayController.java
 │   ├── dto/
-│   │   ├── TaskBoardChangeMessage.java
-│   │   ├── TaskChangedMessage.java
-│   │   ├── TaskEditReplayMessage.java
-│   │   ├── TaskEditSaveRequestSignal.java
-│   │   ├── TaskEditSnapshotMessage.java
-│   │   ├── TaskEditUpdateMessage.java
-│   │   └── TaskPresenceMessage.java
 │   ├── exception/
-│   │   └── StompAuthenticationException.java
 │   └── service/
-│       ├── PresenceService.java
-│       ├── TaskBoardBroadcaster.java
-│       ├── TaskChangeBroadcaster.java
-│       ├── TaskEditAutosaveScheduler.java     # CRDT 공동편집 자동저장
-│       ├── TaskEditBufferReplayListener.java
-│       ├── TaskEditBufferService.java         # CRDT 공동편집 버퍼링
-│       ├── TaskEditChannelRegistry.java
-│       ├── TaskEditLastViewerFlushListener.java
-│       ├── TaskEditableField.java
-│       ├── TaskPresenceEventListener.java
-│       └── WorkspaceMemberRemovedSessionCleaner.java
 │
 ├── dashboard/                      # 워크스페이스 대시보드(통계)
 │   ├── controller/
-│   │   └── DashboardController.java
 │   ├── dto/
-│   │   └── DashboardStatsResponse.java
 │   └── service/
-│       └── DashboardService.java
 │
 └── global/                         # 공통 설정 · 예외 처리
     ├── config/
-    │   ├── FrontendUrls.java
-    │   ├── JacksonConfig.java
-    │   ├── OpenApiConfig.java
-    │   └── S3Config.java
     └── exception/
-        ├── ErrorResponse.java
-        ├── GlobalExceptionHandler.java
-        └── JwtAuthenticationEntryPoint.java
 ```
 
 ## API 문서
