@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.motivhub.be.auth.jwt.JwtProvider;
+import com.motivhub.be.realtime.dto.TaskAwarenessMessage;
 import com.motivhub.be.realtime.dto.TaskEditSnapshotMessage;
 import com.motivhub.be.realtime.dto.TaskEditUpdateMessage;
 import com.motivhub.be.realtime.service.TaskEditBufferService;
@@ -88,6 +89,23 @@ class TaskEditRelayControllerTest extends AbstractIntegrationTest {
             @Override
             public void handleFrame(StompHeaders headers, Object payload) {
                 messages.add((TaskEditUpdateMessage) payload);
+            }
+        });
+        return messages;
+    }
+
+    private BlockingQueue<TaskAwarenessMessage> subscribeToAwareness(
+            StompSession session, Long taskId, String field) {
+        BlockingQueue<TaskAwarenessMessage> messages = new LinkedBlockingQueue<>();
+        session.subscribe("/topic/tasks/" + taskId + "/" + field + "/awareness", new StompFrameHandler() {
+            @Override
+            public Type getPayloadType(StompHeaders headers) {
+                return TaskAwarenessMessage.class;
+            }
+
+            @Override
+            public void handleFrame(StompHeaders headers, Object payload) {
+                messages.add((TaskAwarenessMessage) payload);
             }
         });
         return messages;
@@ -321,5 +339,46 @@ class TaskEditRelayControllerTest extends AbstractIntegrationTest {
         assertThat(taskService.getDescriptionYjsStateBase64(owner.getId(), task.id())).isNull();
 
         session.disconnect();
+    }
+
+    @Test
+    void awarenessUpdateSentByOneSessionIsRelayedToOtherSubscriberWithoutBuffering() throws Exception {
+        User owner = newUser("awareness-relay-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "어웨어니스 릴레이 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("어웨어니스 릴레이 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+        TestTransaction.flagForCommit();
+        TestTransaction.end();
+        TestTransaction.start();
+
+        StompSession senderSession = connectAsUser(owner);
+        senderSession.subscribe("/topic/tasks/" + task.id() + "/note/awareness", new StompFrameHandler() {
+            @Override
+            public Type getPayloadType(StompHeaders headers) {
+                return TaskAwarenessMessage.class;
+            }
+
+            @Override
+            public void handleFrame(StompHeaders headers, Object payload) {
+            }
+        });
+
+        StompSession receiverSession = connectAsUser(owner);
+        BlockingQueue<TaskAwarenessMessage> received = subscribeToAwareness(receiverSession, task.id(), "note");
+        Thread.sleep(300);
+
+        senderSession.send("/app/tasks/" + task.id() + "/note/awareness",
+                new TaskAwarenessMessage("cursor-state-1"));
+
+        TaskAwarenessMessage message = received.poll(5, TimeUnit.SECONDS);
+        assertThat(message).isNotNull();
+        assertThat(message.update()).isEqualTo("cursor-state-1");
+
+        // 어웨어니스는 자동저장 대상이 아니므로 Redis 버퍼에 전혀 적재되지 않아야 한다 - edits와의
+        // 핵심 차이.
+        assertThat(bufferService.isEmpty(task.id(), TaskEditableField.NOTE)).isTrue();
+
+        senderSession.disconnect();
+        receiverSession.disconnect();
     }
 }

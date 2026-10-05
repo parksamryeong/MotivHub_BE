@@ -1,6 +1,7 @@
 package com.motivhub.be.realtime.controller;
 
 import com.motivhub.be.realtime.config.RealtimeDestinations;
+import com.motivhub.be.realtime.dto.TaskAwarenessMessage;
 import com.motivhub.be.realtime.dto.TaskEditSnapshotMessage;
 import com.motivhub.be.realtime.dto.TaskEditUpdateMessage;
 import com.motivhub.be.realtime.service.TaskEditBufferService;
@@ -68,6 +69,26 @@ public class TaskEditRelayController {
         } catch (Exception e) {
             log.warn("편집 업데이트 버퍼 적재 실패(자동저장만 영향, 실시간 릴레이는 정상) - taskId={}, field={}",
                     taskId, field, e);
+        }
+    }
+
+    // 어웨어니스(커서 위치 등)는 편집 업데이트와 달리 버퍼링/자동저장 대상이 아니다 - 순수
+    // 릴레이만 한다. 서버는 이 페이로드의 내용을 전혀 해석하지 않는다(relay-only).
+    @MessageMapping("/tasks/{taskId}/{field}/awareness")
+    public void relayAwareness(@DestinationVariable Long taskId, @DestinationVariable String field,
+                                TaskAwarenessMessage message) {
+        TaskEditableField editableField;
+        try {
+            editableField = TaskEditableField.fromPathSegment(field);
+        } catch (Exception e) {
+            log.warn("어웨어니스 릴레이 실패 - 알 수 없는 필드: taskId={}, field={}", taskId, field, e);
+            return;
+        }
+        try {
+            messagingTemplate.convertAndSend(
+                    RealtimeDestinations.taskAwarenessBroadcast(taskId, editableField), message);
+        } catch (Exception e) {
+            log.warn("어웨어니스 브로드캐스트 실패 - taskId={}, field={}", taskId, field, e);
         }
     }
 

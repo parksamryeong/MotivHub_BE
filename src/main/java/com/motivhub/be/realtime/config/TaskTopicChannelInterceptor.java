@@ -28,12 +28,14 @@ public class TaskTopicChannelInterceptor implements ChannelInterceptor {
     private static final Pattern WORKSPACE_BOARD_TOPIC_PATTERN = Pattern.compile("^/topic/workspaces/(\\d+)/tasks$");
     private static final Pattern EDIT_BROADCAST_TOPIC_PATTERN =
             Pattern.compile("^/topic/tasks/(\\d+)/(description|note)/edits$");
+    private static final Pattern AWARENESS_TOPIC_PATTERN =
+            Pattern.compile("^/topic/tasks/(\\d+)/(description|note)/awareness$");
     private static final Pattern EDIT_SAVE_REQUEST_TOPIC_PATTERN =
             Pattern.compile("^/topic/tasks/(\\d+)/(description|note)/save-request$");
     private static final Pattern EDIT_USER_QUEUE_PATTERN =
             Pattern.compile("^/user/queue/tasks/(\\d+)/(description|note)/edits$");
     private static final Pattern EDIT_SEND_PATTERN =
-            Pattern.compile("^/app/tasks/(\\d+)/(description|note)/(edits|snapshot)$");
+            Pattern.compile("^/app/tasks/(\\d+)/(description|note)/(edits|snapshot|awareness)$");
 
     private final JwtProvider jwtProvider;
     private final WorkspaceService workspaceService;
@@ -120,6 +122,23 @@ public class TaskTopicChannelInterceptor implements ChannelInterceptor {
             editChannelRegistry.authorize(accessor.getSessionId(), destination);
             return;
         }
+        Matcher awarenessMatcher = AWARENESS_TOPIC_PATTERN.matcher(destination);
+        if (awarenessMatcher.matches()) {
+            Long awarenessTaskId = Long.valueOf(awarenessMatcher.group(1));
+            String field = awarenessMatcher.group(2);
+            Task task = taskService.getTask(awarenessTaskId);
+            // /edits 구독과 완전히 같은 권한 기준 - 이 필드를 볼/편집할 권한이 없으면 그 필드의
+            // 커서 정보도 볼 이유가 없다.
+            if ("description".equals(field)) {
+                taskAccessPolicy.requireEditPermission(task, userId);
+            } else {
+                workspaceService.getMembership(task.getWorkspace().getId(), userId);
+            }
+            // /edits와는 별개의 인가 항목이다(토픽 문자열이 다르므로 키가 자동으로 분리된다) -
+            // /edits만 구독한 세션은 이 토픽으로 SEND할 수 없다.
+            editChannelRegistry.authorize(accessor.getSessionId(), destination);
+            return;
+        }
         Matcher saveRequestMatcher = EDIT_SAVE_REQUEST_TOPIC_PATTERN.matcher(destination);
         if (saveRequestMatcher.matches()) {
             requireTaskMembership(Long.valueOf(saveRequestMatcher.group(1)), userId);
@@ -141,7 +160,11 @@ public class TaskTopicChannelInterceptor implements ChannelInterceptor {
         }
         String taskId = editSendMatcher.group(1);
         String field = editSendMatcher.group(2);
-        String canonicalTopic = "/topic/tasks/" + taskId + "/" + field + "/edits";
+        String action = editSendMatcher.group(3);
+        // edits/snapshot은 /edits 구독 인가를 공유한다(기존 동작, 변경 없음) - awareness는
+        // /awareness 구독 인가가 별도로 필요하다.
+        String requiredSubscription = "awareness".equals(action) ? "awareness" : "edits";
+        String canonicalTopic = "/topic/tasks/" + taskId + "/" + field + "/" + requiredSubscription;
         String sessionId = accessor.getSessionId();
         if (sessionId == null || !editChannelRegistry.isAuthorized(sessionId, canonicalTopic)) {
             throw new StompAuthenticationException("이 목적지로 SEND할 권한이 없습니다.");

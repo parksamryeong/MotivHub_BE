@@ -9,10 +9,11 @@ import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 @Component
 public class TaskEditChannelRegistry {
 
-    // 편집 토픽(/topic/tasks/{id}/{field}/edits)을 정상 SUBSCRIBE로 통과한 세션만 그에 대응하는
-    // SEND(타이핑 업데이트/스냅샷 응답)를 보낼 수 있게, "이 세션이 이 토픽을 구독했다"는 사실만
-    // 메모리에 기록해둔다. SEND마다 DB로 멤버십을 재확인하지 않기 위한 캐시 - 프레즌스가 세션별 구독을
-    // 인메모리로 추적하는 것과 같은 이유.
+    // 편집/어웨어니스 토픽(/topic/tasks/{id}/{field}/edits와 /awareness 토픽 모두 해당한다)을 정상
+    // SUBSCRIBE로 통과한 세션만 그에 대응하는 SEND(타이핑 업데이트/스냅샷 응답/커서 등 어웨어니스
+    // 데이터)를 보낼 수 있게, "이 세션이 이 토픽을 구독했다"는 사실만 메모리에 기록해둔다. SEND마다
+    // DB로 멤버십을 재확인하지 않기 위한 캐시 - 프레즌스가 세션별 구독을 인메모리로 추적하는 것과 같은
+    // 이유.
     private final Set<String> authorizedSessionTopics = ConcurrentHashMap.newKeySet();
 
     public void authorize(String sessionId, String topic) {
@@ -24,9 +25,10 @@ public class TaskEditChannelRegistry {
     }
 
     /**
-     * 특정 세션의 특정 편집 토픽 SEND 인가만 회수한다. 워크스페이스에서 제외된 멤버의 편집 토픽
-     * 구독을 강제 해제할 때(WorkspaceMemberRemovedSessionCleaner) 같이 호출해서, 커넥션이 살아 있는
-     * 동안 계속 편집을 릴레이·버퍼링하는 것을 막는다.
+     * 특정 세션의 특정 토픽 SEND 인가만 회수한다. authorize()로 등록된 토픽이면 편집, 스냅샷 관련,
+     * 어웨어니스 토픽 어느 쪽이든 대상이 된다. 워크스페이스에서 제외된 멤버의 구독을 강제 해제할
+     * 때(WorkspaceMemberRemovedSessionCleaner) 같이 호출해서, 커넥션이 살아 있는 동안 계속
+     * 편집·어웨어니스 데이터를 릴레이·버퍼링하는 것을 막는다.
      */
     public void revoke(String sessionId, String topic) {
         authorizedSessionTopics.remove(key(sessionId, topic));
