@@ -11,6 +11,7 @@ import com.motivhub.be.user.domain.SocialProvider;
 import com.motivhub.be.user.domain.User;
 import com.motivhub.be.user.domain.UserStatus;
 import com.motivhub.be.user.dto.NicknameUpdateRequest;
+import com.motivhub.be.user.dto.PasswordChangeRequest;
 import com.motivhub.be.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,6 +27,7 @@ class UserControllerTest extends AbstractIntegrationTest {
     @Autowired private UserRepository userRepository;
     @Autowired private JwtProvider jwtProvider;
     @Autowired private com.motivhub.be.auth.service.RefreshTokenService refreshTokenService;
+    @Autowired private org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
 
     private String tokenFor(User user) {
         return jwtProvider.generateAccessToken(user.getId());
@@ -48,7 +50,8 @@ class UserControllerTest extends AbstractIntegrationTest {
 
         mockMvc.perform(get("/api/users/me/mypage").header("Authorization", "Bearer " + tokenFor(user)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.nickname").value("user_p2nick"));
+                .andExpect(jsonPath("$.nickname").value("user_p2nick"))
+                .andExpect(jsonPath("$.provider").value("GITHUB"));
     }
 
     @Test
@@ -140,5 +143,85 @@ class UserControllerTest extends AbstractIntegrationTest {
 
         assertThat(refreshTokenService.find(user.getId(), "device-A")).isEmpty();
         assertThat(refreshTokenService.find(user.getId(), "device-B")).isEmpty();
+    }
+
+    @Test
+    void changesPassword() throws Exception {
+        User user = userRepository.save(
+                User.createEmailAccount("changepw1@test.com", "user_cp1nick",
+                        passwordEncoder.encode("OldPass1!")));
+        refreshTokenService.save(user.getId(), "device-A", "token-a");
+        refreshTokenService.save(user.getId(), "device-B", "token-b");
+
+        mockMvc.perform(patch("/api/users/me/password")
+                        .header("Authorization", "Bearer " + tokenFor(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new PasswordChangeRequest("OldPass1!", "NewPass1!"))))
+                .andExpect(status().isOk());
+
+        User updated = userRepository.findById(user.getId()).orElseThrow();
+        assertThat(passwordEncoder.matches("NewPass1!", updated.getPassword())).isTrue();
+        assertThat(refreshTokenService.find(user.getId(), "device-A")).isEmpty();
+        assertThat(refreshTokenService.find(user.getId(), "device-B")).isEmpty();
+    }
+
+    @Test
+    void returns400WhenCurrentPasswordIncorrect() throws Exception {
+        User user = userRepository.save(
+                User.createEmailAccount("changepw2@test.com", "user_cp2nick",
+                        passwordEncoder.encode("OldPass1!")));
+
+        mockMvc.perform(patch("/api/users/me/password")
+                        .header("Authorization", "Bearer " + tokenFor(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new PasswordChangeRequest("WrongPass1!", "NewPass1!"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("CURRENT_PASSWORD_MISMATCH"));
+    }
+
+    @Test
+    void returns400ForSocialAccountPasswordChange() throws Exception {
+        User user = userRepository.save(
+                User.create(SocialProvider.GITHUB, "p12", "social@test.com", "user_p12nick", null));
+
+        mockMvc.perform(patch("/api/users/me/password")
+                        .header("Authorization", "Bearer " + tokenFor(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new PasswordChangeRequest("anything1!", "NewPass1!"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("SOCIAL_ACCOUNT_NO_PASSWORD"));
+    }
+
+    @Test
+    void returns400WhenNewPasswordSameAsCurrent() throws Exception {
+        User user = userRepository.save(
+                User.createEmailAccount("changepw3@test.com", "user_cp3nick",
+                        passwordEncoder.encode("SamePass1!")));
+
+        mockMvc.perform(patch("/api/users/me/password")
+                        .header("Authorization", "Bearer " + tokenFor(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new PasswordChangeRequest("SamePass1!", "SamePass1!"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("NEW_PASSWORD_SAME_AS_CURRENT"));
+    }
+
+    @Test
+    void returns400ForInvalidNewPasswordFormat() throws Exception {
+        User user = userRepository.save(
+                User.createEmailAccount("changepw4@test.com", "user_cp4nick",
+                        passwordEncoder.encode("OldPass1!")));
+
+        mockMvc.perform(patch("/api/users/me/password")
+                        .header("Authorization", "Bearer " + tokenFor(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new PasswordChangeRequest("OldPass1!", "short"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
     }
 }
