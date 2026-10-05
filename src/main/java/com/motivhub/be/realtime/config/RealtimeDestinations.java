@@ -15,6 +15,10 @@ public final class RealtimeDestinations {
         return "/topic/tasks/" + taskId + "/" + field.pathSegment() + "/edits";
     }
 
+    public static String taskAwarenessBroadcast(Long taskId, TaskEditableField field) {
+        return "/topic/tasks/" + taskId + "/" + field.pathSegment() + "/awareness";
+    }
+
     public static String taskEditSaveRequest(Long taskId, TaskEditableField field) {
         return "/topic/tasks/" + taskId + "/" + field.pathSegment() + "/save-request";
     }

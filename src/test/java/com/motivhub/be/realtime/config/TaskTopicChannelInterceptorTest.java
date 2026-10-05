@@ -463,4 +463,116 @@ class TaskTopicChannelInterceptorTest extends AbstractIntegrationTest {
 
         assertThatCode(() -> interceptor.preSend(message, null)).doesNotThrowAnyException();
     }
+
+    @Test
+    void memberCanSubscribeToTaskAwarenessTopic() {
+        User owner = newUser("awareness-sub-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "어웨어니스 구독 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("어웨어니스 구독 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        Message<byte[]> message = subscribeMessage(
+                "/topic/tasks/" + task.id() + "/description/awareness", owner.getId());
+
+        assertThatCode(() -> interceptor.preSend(message, null)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void nonMemberCannotSubscribeToTaskAwarenessTopic() {
+        User owner = newUser("awareness-sub-owner2");
+        User outsider = newUser("awareness-sub-outsider");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "어웨어니스 구독 권한 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("어웨어니스 구독 권한 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        Message<byte[]> message = subscribeMessage(
+                "/topic/tasks/" + task.id() + "/description/awareness", outsider.getId());
+
+        assertThatThrownBy(() -> interceptor.preSend(message, null))
+                .isInstanceOf(NotWorkspaceMemberException.class);
+    }
+
+    @Test
+    void memberWithoutAssigneeCannotSubscribeToDescriptionAwarenessTopic() {
+        User owner = newUser("desc-awareness-perm-owner");
+        User plainMember = newUser("desc-awareness-perm-mem");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "설명 어웨어니스 권한 워크스페이스");
+        workspaceMemberRepository.save(com.motivhub.be.workspace.domain.WorkspaceMember.create(
+                workspaceService.getWorkspace(workspace.id()), plainMember,
+                com.motivhub.be.workspace.domain.WorkspaceRole.MEMBER));
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("설명 어웨어니스 권한 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        Message<byte[]> message = subscribeMessage(
+                "/topic/tasks/" + task.id() + "/description/awareness", plainMember.getId());
+
+        assertThatThrownBy(() -> interceptor.preSend(message, null))
+                .isInstanceOf(com.motivhub.be.task.exception.TaskEditForbiddenException.class);
+    }
+
+    @Test
+    void plainMemberCanSubscribeToNoteAwarenessTopicWithoutEditPermission() {
+        User owner = newUser("note-awareness-perm-owner");
+        User plainMember = newUser("note-awareness-perm-mem");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "노트 어웨어니스 권한 워크스페이스");
+        workspaceMemberRepository.save(com.motivhub.be.workspace.domain.WorkspaceMember.create(
+                workspaceService.getWorkspace(workspace.id()), plainMember,
+                com.motivhub.be.workspace.domain.WorkspaceRole.MEMBER));
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("노트 어웨어니스 권한 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        Message<byte[]> message = subscribeMessage(
+                "/topic/tasks/" + task.id() + "/note/awareness", plainMember.getId());
+
+        assertThatCode(() -> interceptor.preSend(message, null)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void sendToAwarenessDestinationWithoutPriorSubscribeIsRejected() {
+        User owner = newUser("awareness-send-no-sub");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "미구독 어웨어니스 SEND 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("미구독 어웨어니스 SEND 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        Message<byte[]> message = sendMessage(
+                "/app/tasks/" + task.id() + "/description/awareness", owner.getId());
+
+        assertThatThrownBy(() -> interceptor.preSend(message, null))
+                .isInstanceOf(StompAuthenticationException.class);
+    }
+
+    @Test
+    void sendToAwarenessDestinationAfterSubscribingToAwarenessIsAllowed() {
+        User owner = newUser("awareness-send-with-sub");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "구독후 어웨어니스 SEND 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("구독후 어웨어니스 SEND 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+        String sessionId = "awareness-send-session";
+        interceptor.preSend(subscribeMessage(
+                "/topic/tasks/" + task.id() + "/description/awareness", owner.getId(), sessionId), null);
+
+        Message<byte[]> message = sendMessage(
+                "/app/tasks/" + task.id() + "/description/awareness", owner.getId(), sessionId);
+
+        assertThatCode(() -> interceptor.preSend(message, null)).doesNotThrowAnyException();
+    }
+
+    // 핵심 분리 확인: /edits 구독은 /awareness SEND 권한을 주지 않는다 - 두 인가가 토픽
+    // 문자열로 완전히 분리된다는 것을 증명한다.
+    @Test
+    void subscribingToEditsDoesNotAuthorizeSendingToAwareness() {
+        User owner = newUser("edits-sub-awareness-send");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "분리 확인 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("분리 확인 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+        String sessionId = "edits-sub-awareness-send-session";
+        interceptor.preSend(subscribeMessage(
+                "/topic/tasks/" + task.id() + "/description/edits", owner.getId(), sessionId), null);
+
+        Message<byte[]> message = sendMessage(
+                "/app/tasks/" + task.id() + "/description/awareness", owner.getId(), sessionId);
+
+        assertThatThrownBy(() -> interceptor.preSend(message, null))
+                .isInstanceOf(StompAuthenticationException.class);
+    }
 }

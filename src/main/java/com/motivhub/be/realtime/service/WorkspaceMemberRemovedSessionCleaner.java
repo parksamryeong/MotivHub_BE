@@ -99,14 +99,17 @@ public class WorkspaceMemberRemovedSessionCleaner {
     }
 
     // 제외된 멤버에게서 회수해야 하는 목적지 전체 - 워크스페이스 보드 + 그 워크스페이스에 속한 모든
-    // 태스크의 두 편집 브로드캐스트 토픽. 편집 토픽은 태스크 단위라 워크스페이스 하나에 목적지가
-    // (태스크 수 × 2)개 생기므로, 구독 하나마다 문자열 비교를 반복하지 않도록 Set으로 만들어 둔다.
+    // 태스크의 편집 브로드캐스트 토픽과 어웨어니스 브로드캐스트 토픽. 이 토픽들은 태스크 단위라
+    // 워크스페이스 하나에 목적지가 (태스크 수 × 4)개(편집 2개 + 어웨어니스 2개) 생기므로, 구독
+    // 하나마다 문자열 비교를 반복하지 않도록 Set으로 만들어 둔다.
     private Set<String> revocableDestinations(Long workspaceId, String boardDestination) {
         Set<String> destinations = new LinkedHashSet<>();
         destinations.add(boardDestination);
         for (Task task : taskRepository.findByWorkspaceId(workspaceId)) {
             destinations.add(RealtimeDestinations.taskEditBroadcast(task.getId(), TaskEditableField.DESCRIPTION));
             destinations.add(RealtimeDestinations.taskEditBroadcast(task.getId(), TaskEditableField.NOTE));
+            destinations.add(RealtimeDestinations.taskAwarenessBroadcast(task.getId(), TaskEditableField.DESCRIPTION));
+            destinations.add(RealtimeDestinations.taskAwarenessBroadcast(task.getId(), TaskEditableField.NOTE));
         }
         return destinations;
     }

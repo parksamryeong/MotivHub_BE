@@ -31,4 +31,16 @@ class RealtimeDestinationsTest {
         assertThat(RealtimeDestinations.taskEditUserQueue(42L, TaskEditableField.DESCRIPTION))
                 .isEqualTo("/queue/tasks/42/description/edits");
     }
+
+    @Test
+    void taskAwarenessBroadcastBuildsExpectedTopic() {
+        assertThat(RealtimeDestinations.taskAwarenessBroadcast(42L, TaskEditableField.NOTE))
+                .isEqualTo("/topic/tasks/42/note/awareness");
+    }
+
+    @Test
+    void taskAwarenessBroadcastBuildsExpectedTopicForDescription() {
+        assertThat(RealtimeDestinations.taskAwarenessBroadcast(7L, TaskEditableField.DESCRIPTION))
+                .isEqualTo("/topic/tasks/7/description/awareness");
+    }
 }

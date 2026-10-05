@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.motivhub.be.auth.jwt.JwtProvider;
 import com.motivhub.be.realtime.config.RealtimeDestinations;
+import com.motivhub.be.realtime.dto.TaskAwarenessMessage;
 import com.motivhub.be.realtime.dto.TaskBoardChangeMessage;
 import com.motivhub.be.realtime.dto.TaskEditUpdateMessage;
 import com.motivhub.be.support.AbstractIntegrationTest;
@@ -124,6 +125,24 @@ class WorkspaceMemberRemovedSessionCleanerTest extends AbstractIntegrationTest {
         return messages;
     }
 
+    private BlockingQueue<TaskAwarenessMessage> subscribeToAwareness(StompSession session, Long taskId) {
+        BlockingQueue<TaskAwarenessMessage> messages = new LinkedBlockingQueue<>();
+        session.subscribe(
+                RealtimeDestinations.taskAwarenessBroadcast(taskId, TaskEditableField.DESCRIPTION),
+                new StompFrameHandler() {
+                    @Override
+                    public Type getPayloadType(StompHeaders headers) {
+                        return TaskAwarenessMessage.class;
+                    }
+
+                    @Override
+                    public void handleFrame(StompHeaders headers, Object payload) {
+                        messages.add((TaskAwarenessMessage) payload);
+                    }
+                });
+        return messages;
+    }
+
     // 편집 토픽은 보드 토픽과 달리 태스크 단위라, 추방 시 정리 대상 목적지를 워크스페이스의 모든
     // 태스크로부터 계산해야 한다(Fix 4). 추방된 멤버의 소켓은 STOMP 하트비트로 무한히 살아있을 수
     // 있으므로 DISCONNECT만 믿으면 계속 타이핑을 릴레이받고 릴레이할 수 있다.
@@ -175,6 +194,68 @@ class WorkspaceMemberRemovedSessionCleanerTest extends AbstractIntegrationTest {
         kickedSession.send("/app/tasks/" + task.id() + "/description/edits",
                 new TaskEditUpdateMessage("relay-after-kick"));
         assertThat(stayingEdits.poll(2, TimeUnit.SECONDS)).isNull();
+
+        // 인가가 회수된 뒤의 SEND는 인터셉터가 거부하고, 거부된 SEND는 STOMP 커넥션 전체를 닫는다
+        // (이 기능 한정이 아닌 기존 STOMP 전반의 동작). 따라서 이 시점에 kickedSession은 이미 닫혀
+        // 있는 것이 정상이고, 그대로 disconnect()를 호출하면 IllegalStateException이 난다.
+        assertThat(kickedSession.isConnected()).isFalse();
+        stayingSession.disconnect();
+    }
+
+    // 어웨어니스 토픽(/awareness)은 편집 토픽(/edits)과 별개의 목적지라, 추방 시 정리 대상에서
+    // 빠지면 추방된 멤버가 커서/활동 표시 등 어웨어니스 데이터를 계속 받고 보낼 수 있다(이 기능
+    // 한정으로 새로 생긴, /edits에서 이미 고쳤던 것과 같은 버그 클래스).
+    @Test
+    void kickedMemberStopsReceivingTaskDescriptionAwarenessBroadcastsWhileOtherAssigneeStillDoes() throws Exception {
+        User owner = newUser("awareness-kick-owner");
+        User kicked = newUser("awareness-kick-kicked");
+        User staying = newUser("awareness-kick-staying");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "어웨어니스 토픽 추방 워크스페이스");
+        joinAsMember(workspace.id(), kicked);
+        joinAsMember(workspace.id(), staying);
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("어웨어니스 토픽 추방 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5),
+                        List.of()));
+        // description 어웨어니스 토픽 구독도 편집 토픽과 같은 권한 규칙(OWNER 또는 담당자)을 따르므로,
+        // 두 멤버 모두 담당자로 등록해야 애초에 구독이 가능하다.
+        taskService.addAssignee(owner.getId(), task.id(), kicked.getId());
+        taskService.addAssignee(owner.getId(), task.id(), staying.getId());
+        TestTransaction.flagForCommit();
+        TestTransaction.end();
+        TestTransaction.start();
+
+        StompSession kickedSession = connectAsUser(kicked);
+        BlockingQueue<TaskAwarenessMessage> kickedAwareness = subscribeToAwareness(kickedSession, task.id());
+        StompSession stayingSession = connectAsUser(staying);
+        BlockingQueue<TaskAwarenessMessage> stayingAwareness = subscribeToAwareness(stayingSession, task.id());
+        Thread.sleep(300); // 브로커의 구독 등록이 끝날 시간 확보(아래 브로드캐스트가 이를 앞지르지 않도록)
+
+        String awarenessDestination =
+                RealtimeDestinations.taskAwarenessBroadcast(task.id(), TaskEditableField.DESCRIPTION);
+
+        // 추방 전: 두 구독 모두 실제로 살아있음을 먼저 증명한다 - 그래야 "추방 후 못 받는다"가
+        // 구독 미등록 때문에 우연히 통과하는 게 아니라는 것이 보장된다.
+        messagingTemplate.convertAndSend(awarenessDestination, new TaskAwarenessMessage("before-kick"));
+        assertThat(stayingAwareness.poll(5, TimeUnit.SECONDS)).isNotNull();
+        assertThat(kickedAwareness.poll(5, TimeUnit.SECONDS)).isNotNull();
+
+        TestTransaction.flagForCommit();
+        workspaceService.kick(owner.getId(), workspace.id(), kicked.getId());
+        TestTransaction.end();
+        TestTransaction.start();
+        Thread.sleep(500); // 구독 해제 메시지가 브로커에 실제로 반영될 시간 확보
+
+        messagingTemplate.convertAndSend(awarenessDestination, new TaskAwarenessMessage("after-kick"));
+
+        assertThat(stayingAwareness.poll(5, TimeUnit.SECONDS)).isNotNull();
+        assertThat(kickedAwareness.poll(2, TimeUnit.SECONDS)).isNull();
+
+        // 구독 해제와 함께 SEND 인가(TaskEditChannelRegistry)도 회수돼야 한다 - 회수되지 않으면
+        // 추방된 멤버가 계속 어웨어니스 데이터(커서 등)를 릴레이할 수 있고, 남아있는 정상 편집자가
+        // 그걸 신뢰하게 된다.
+        kickedSession.send("/app/tasks/" + task.id() + "/description/awareness",
+                new TaskAwarenessMessage("relay-after-kick"));
+        assertThat(stayingAwareness.poll(2, TimeUnit.SECONDS)).isNull();
 
         // 인가가 회수된 뒤의 SEND는 인터셉터가 거부하고, 거부된 SEND는 STOMP 커넥션 전체를 닫는다
         // (이 기능 한정이 아닌 기존 STOMP 전반의 동작). 따라서 이 시점에 kickedSession은 이미 닫혀
