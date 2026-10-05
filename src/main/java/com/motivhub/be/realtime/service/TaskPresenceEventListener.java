@@ -1,8 +1,5 @@
 package com.motivhub.be.realtime.service;
 
-import com.motivhub.be.realtime.dto.TaskPresenceMessage;
-import com.motivhub.be.user.dto.UserSummary;
-import com.motivhub.be.user.repository.UserRepository;
 import java.security.Principal;
 import java.util.List;
 import java.util.Map;
@@ -12,7 +9,6 @@ import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
@@ -26,8 +22,7 @@ public class TaskPresenceEventListener {
     private static final Pattern PRESENCE_TOPIC_PATTERN = Pattern.compile("^/topic/tasks/(\\d+)/presence$");
 
     private final PresenceService presenceService;
-    private final UserRepository userRepository;
-    private final SimpMessagingTemplate messagingTemplate;
+    private final PresenceBroadcaster presenceBroadcaster;
 
     // STOMP의 구독 id는 클라이언트가 정하며, 하나의 커넥션 안에서만 유일함이 보장된다(실제로
     // Spring의 DefaultStompSession이나 stomp.js는 커넥션마다 "0"부터 다시 번호를 매긴다).
@@ -37,11 +32,9 @@ public class TaskPresenceEventListener {
     // 조합한 presenceKey를 맵 키이자 PresenceService에 넘기는 식별자로 사용한다.
     private final Map<String, PresenceSubscription> subscriptions = new ConcurrentHashMap<>();
 
-    public TaskPresenceEventListener(PresenceService presenceService, UserRepository userRepository,
-                                      SimpMessagingTemplate messagingTemplate) {
+    public TaskPresenceEventListener(PresenceService presenceService, PresenceBroadcaster presenceBroadcaster) {
         this.presenceService = presenceService;
-        this.userRepository = userRepository;
-        this.messagingTemplate = messagingTemplate;
+        this.presenceBroadcaster = presenceBroadcaster;
     }
 
     @EventListener
@@ -75,7 +68,7 @@ public class TaskPresenceEventListener {
             // 항목이 영원히 고아로 남을 수 있다.
             subscriptions.put(presenceKey, new PresenceSubscription(sessionId, taskId));
             presenceService.join(taskId, presenceKey, userId);
-            broadcastViewers(taskId);
+            presenceBroadcaster.requestBroadcast(taskId);
         } catch (Exception e) {
             log.warn("프레즌스 구독 처리 실패", e);
         }
@@ -96,7 +89,7 @@ public class TaskPresenceEventListener {
                 return;
             }
             presenceService.leave(subscription.taskId(), presenceKey);
-            broadcastViewers(subscription.taskId());
+            presenceBroadcaster.requestBroadcast(subscription.taskId());
         } catch (Exception e) {
             log.warn("프레즌스 구독 해제 처리 실패", e);
         }
@@ -115,7 +108,7 @@ public class TaskPresenceEventListener {
                 // entry.getKey()가 곧 handleSubscribe에서 join(...)에 넘겼던 presenceKey와
                 // 동일한 값이므로 그대로 재사용한다(다시 조합하지 않는다).
                 presenceService.leave(subscription.taskId(), entry.getKey());
-                broadcastViewers(subscription.taskId());
+                presenceBroadcaster.requestBroadcast(subscription.taskId());
             }
         } catch (Exception e) {
             log.warn("프레즌스 연결 종료 처리 실패 - sessionId={}", event.getSessionId(), e);
@@ -124,15 +117,6 @@ public class TaskPresenceEventListener {
 
     private static String presenceKey(String sessionId, String subscriptionId) {
         return sessionId + "::" + subscriptionId;
-    }
-
-    private void broadcastViewers(Long taskId) {
-        List<Long> viewerIds = presenceService.currentViewerIds(taskId);
-        List<UserSummary> viewers = userRepository.findAllById(viewerIds).stream()
-                .map(UserSummary::from)
-                .toList();
-        messagingTemplate.convertAndSend("/topic/tasks/" + taskId + "/presence",
-                new TaskPresenceMessage(taskId, viewers));
     }
 
     private record PresenceSubscription(String sessionId, Long taskId) {
