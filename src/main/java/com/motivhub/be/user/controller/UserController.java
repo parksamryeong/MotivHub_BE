@@ -3,6 +3,7 @@ package com.motivhub.be.user.controller;
 import com.motivhub.be.user.dto.MyPageResponse;
 import com.motivhub.be.user.dto.NicknameCheckResponse;
 import com.motivhub.be.user.dto.NicknameUpdateRequest;
+import com.motivhub.be.user.dto.PasswordChangeRequest;
 import com.motivhub.be.user.dto.UserProfileResponse;
 import com.motivhub.be.user.service.UserService;
 import jakarta.validation.Valid;
@@ -45,6 +46,13 @@ public class UserController {
     public ResponseEntity<UserProfileResponse> updateNickname(
             @AuthenticationPrincipal Long userId, @Valid @RequestBody NicknameUpdateRequest request) {
         return ResponseEntity.ok(userService.updateNickname(userId, request.nickname()));
+    }
+
+    @PatchMapping("/me/password")
+    public ResponseEntity<Void> changePassword(
+            @AuthenticationPrincipal Long userId, @Valid @RequestBody PasswordChangeRequest request) {
+        userService.changePassword(userId, request.currentPassword(), request.newPassword());
+        return ResponseEntity.ok().build();
     }
 
     @DeleteMapping("/me")

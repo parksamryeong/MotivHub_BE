@@ -31,8 +31,11 @@ import com.motivhub.be.task.exception.TaskCommentNotFoundException;
 import com.motivhub.be.task.exception.TaskEditForbiddenException;
 import com.motivhub.be.task.exception.TaskNotFoundException;
 import com.motivhub.be.task.exception.TaskPeriodEditForbiddenException;
+import com.motivhub.be.user.exception.CurrentPasswordMismatchException;
 import com.motivhub.be.user.exception.InvalidNicknameException;
+import com.motivhub.be.user.exception.NewPasswordSameAsCurrentException;
 import com.motivhub.be.user.exception.NicknameDuplicateException;
+import com.motivhub.be.user.exception.SocialAccountPasswordChangeException;
 import com.motivhub.be.user.exception.UserNotFoundException;
 import com.motivhub.be.workspace.exception.InvalidInviteTokenException;
 import com.motivhub.be.workspace.exception.InviteExpiredException;
@@ -150,6 +153,24 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleUserNotFound(UserNotFoundException e) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(ErrorResponse.of("USER_NOT_FOUND", e.getMessage()));
+    }
+
+    @ExceptionHandler(CurrentPasswordMismatchException.class)
+    public ResponseEntity<ErrorResponse> handleCurrentPasswordMismatch(CurrentPasswordMismatchException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("CURRENT_PASSWORD_MISMATCH", e.getMessage()));
+    }
+
+    @ExceptionHandler(SocialAccountPasswordChangeException.class)
+    public ResponseEntity<ErrorResponse> handleSocialAccountPasswordChange(SocialAccountPasswordChangeException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("SOCIAL_ACCOUNT_NO_PASSWORD", e.getMessage()));
+    }
+
+    @ExceptionHandler(NewPasswordSameAsCurrentException.class)
+    public ResponseEntity<ErrorResponse> handleNewPasswordSameAsCurrent(NewPasswordSameAsCurrentException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("NEW_PASSWORD_SAME_AS_CURRENT", e.getMessage()));
     }
 
     @ExceptionHandler(TaskNotFoundException.class)
