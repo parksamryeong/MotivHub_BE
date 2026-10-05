@@ -104,6 +104,10 @@ public class User {
         this.nicknameConfigured = true;
     }
 
+    public void changePassword(String encodedPassword) {
+        this.password = encodedPassword;
+    }
+
     public boolean isWithdrawn() {
         return this.status == UserStatus.WITHDRAWN;
     }

@@ -79,4 +79,13 @@ class UserTest {
         assertThat(user.getPassword()).isNull();
         assertThat(user.isWithdrawn()).isTrue();
     }
+
+    @Test
+    void changePasswordReplacesStoredPasswordHash() {
+        User user = User.createEmailAccount("change-pw@example.com", "changepwuser", "old-encoded-hash");
+
+        user.changePassword("new-encoded-hash");
+
+        assertThat(user.getPassword()).isEqualTo("new-encoded-hash");
+    }
 }
