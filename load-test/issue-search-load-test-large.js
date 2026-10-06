@@ -5,7 +5,12 @@ import { signAccessToken } from './lib/auth.js';
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
 const JWT_SECRET = __ENV.JWT_SECRET || 'k6loadtestdevsecretexactly32byte';
 const USER_IDS = [90001, 90002, 90003, 90004, 90005, 90006, 90007, 90008, 90009, 90010];
-const SEARCH_KEYWORD = 'BOTTLENECKPROBELARGE';
+// 원래 쓰던 'BOTTLENECKPROBELARGE'는 끝부분 "LARGE"가 이 시드의 모든 이슈 제목에 들어있는
+// "(large)"와 ngram 2글자 단위로 겹쳐서(la/ar/rg/ge), FULLTEXT 자연어 모드가 50만 건 거의
+// 전부를 매칭시켜버리는 버그가 있었다(실측으로 발견). 제목 문자열과 전혀 안 겹치는 키워드로
+// 교체했다 - 기존 시드 데이터는 UPDATE로 이 키워드로 바꿔치기했다(재시딩 시 이 파일의 시드
+// SQL도 이 키워드를 쓰도록 맞춰져 있음).
+const SEARCH_KEYWORD = 'QZPLUMBUS';
 const EXPECTED_MATCH_COUNT = 1250;
 
 // issue-search-load-test.js(1만 건)의 대규모 버전 - 이슈 50만 건(seed-issue-search-data-large.sql)
