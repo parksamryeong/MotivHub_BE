@@ -170,12 +170,32 @@ com.motivhub.be
 
 ### 1. 환경 변수 설정
 
-앱이 기동하려면 아래 환경 변수가 필요합니다. Spring Security가 기동 시점에 OAuth2 클라이언트 설정 값을 검증하므로, 로컬 개발에서는 실제 값이 아니어도 비어 있지 않은 임의의 문자열이면 됩니다.
+앱이 기동하려면 아래 환경 변수가 필요합니다. Spring Security가 기동 시점에 OAuth2 클라이언트 설정 값을 검증하므로, 로컬 개발에서는 실제 값이 아니어도 비어 있지 않은 임의의 문자열이면 됩니다. 이 프로젝트는 `.env` 파일을 쓰지 않습니다 — 아래처럼 OS/쉘 환경 변수로 직접 설정합니다.
 
 - `JWT_SECRET`: 32자 이상의 임의 문자열
 - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
 - `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`
 - `KAKAO_CLIENT_ID`, `KAKAO_CLIENT_SECRET`
+
+실행 명령 앞에 붙여서 한 번에 넘기면 됩니다(아래 "3. 애플리케이션 실행"의 `./gradlew bootRun`에 그대로 붙여 쓰는 방식):
+
+```bash
+# macOS/Linux/Git Bash
+JWT_SECRET=local-dev-secret-change-me-32bytes \
+GOOGLE_CLIENT_ID=dummy GOOGLE_CLIENT_SECRET=dummy \
+GITHUB_CLIENT_ID=dummy GITHUB_CLIENT_SECRET=dummy \
+KAKAO_CLIENT_ID=dummy KAKAO_CLIENT_SECRET=dummy \
+./gradlew bootRun
+```
+
+```powershell
+# Windows PowerShell — 변수를 먼저 세션에 설정한 뒤 실행
+$env:JWT_SECRET="local-dev-secret-change-me-32bytes"
+$env:GOOGLE_CLIENT_ID="dummy"; $env:GOOGLE_CLIENT_SECRET="dummy"
+$env:GITHUB_CLIENT_ID="dummy"; $env:GITHUB_CLIENT_SECRET="dummy"
+$env:KAKAO_CLIENT_ID="dummy"; $env:KAKAO_CLIENT_SECRET="dummy"
+./gradlew bootRun
+```
 
 ### 2. 인프라 컨테이너 기동
 
