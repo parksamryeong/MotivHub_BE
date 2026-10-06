@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.transaction.TestTransaction;
 import org.springframework.test.web.servlet.MockMvc;
 
 @AutoConfigureMockMvc
@@ -187,7 +188,14 @@ class IssueControllerTest extends AbstractIntegrationTest {
 
     @Test
     void searchByQueryParamFiltersToMatchingTitle() throws Exception {
-        User author = newUser("c7-author");
+        // 이 테스트는 검색 결과를 보려고 트랜잭션을 강제 커밋한다(아래 TestTransaction 참고). 로컬
+        // newUser()는 고정 suffix("c7-author")를 쓰는데, 롤백되는 다른 테스트(예:
+        // updatingWithBlankTitleReturns400)도 같은 suffix를 쓴다 - 평소엔 롤백되니 안전하지만,
+        // 이 테스트만 실제로 커밋해버리면 그 유저가 공유 Testcontainers MySQL에 영구히 남아 나중에
+        // 같은 suffix로 유저를 만들려는 테스트가 유니크 제약 위반으로 깨진다. createUniqueUser()
+        // (AbstractIntegrationTest, 전역 카운터로 접미사를 유일하게 만듦)로 이 충돌을 구조적으로
+        // 막는다.
+        User author = createUniqueUser("c7-author");
         WorkspaceResponse workspace = workspaceService.create(author.getId(), "이슈 검색 API 워크스페이스");
         mockMvc.perform(post("/api/issues")
                         .header("Authorization", "Bearer " + tokenFor(author))
@@ -195,10 +203,26 @@ class IssueControllerTest extends AbstractIntegrationTest {
                         .content(objectMapper.writeValueAsString(
                                 new IssueCreateRequest(workspace.id(), "검색용 특이한 제목", "설명", null))))
                 .andExpect(status().isOk());
+        // InnoDB FULLTEXT 인덱스는 같은 트랜잭션 안에서도 커밋 전까지는 검색 결과에 반영되지 않는다
+        // (일반 B-Tree 인덱스와 다른 특성). 이 테스트는 @Transactional로 롤백되므로, 검색 대상 이슈를
+        // 만든 뒤 강제로 커밋하고 새 트랜잭션을 시작해야 GET 검색이 그 데이터를 볼 수 있다.
+        TestTransaction.flagForCommit();
+        TestTransaction.end();
+        TestTransaction.start();
 
-        mockMvc.perform(get("/api/issues").queryParam("q", "특이한")
-                        .header("Authorization", "Bearer " + tokenFor(author)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].title").value("검색용 특이한 제목"));
+        try {
+            mockMvc.perform(get("/api/issues").queryParam("q", "특이한")
+                            .header("Authorization", "Bearer " + tokenFor(author)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0].title").value("검색용 특이한 제목"));
+        } finally {
+            // 공유 Testcontainers MySQL에 커밋된 데이터가 영구히 남아 workspace 필터링 없이 전체 이슈
+            // 목록 개수를 비교하는 다른 테스트(예: createsAndListsIssue)를 오염시키지 않도록, 워크스페이스를
+            // 소프트 삭제해서 이후 모든 조회에서 제외시키고 그 삭제도 다시 강제 커밋한다.
+            workspaceService.delete(author.getId(), workspace.id());
+            TestTransaction.flagForCommit();
+            TestTransaction.end();
+            TestTransaction.start();
+        }
     }
 }

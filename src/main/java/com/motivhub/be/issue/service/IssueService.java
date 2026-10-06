@@ -15,6 +15,7 @@ import com.motivhub.be.workspace.service.WorkspaceService;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -48,10 +49,25 @@ public class IssueService {
     public List<IssueResponse> list(String keyword) {
         List<Issue> issues = (keyword == null || keyword.isBlank())
                 ? issueRepository.findAllOrderByCreatedAtDesc()
-                : issueRepository.searchByKeyword(keyword.trim());
+                : searchByKeywordOrderByRelevance(keyword.trim());
         Map<Long, Long> commentCounts = commentCountByIssueId(issues.stream().map(Issue::getId).toList());
         return issues.stream()
                 .map(issue -> IssueResponse.from(issue, commentCounts.getOrDefault(issue.getId(), 0L)))
+                .toList();
+    }
+
+    // 네이티브 쿼리(1단계: 관련도순 ID)와 JPQL IN 쿼리(2단계: author/workspace 함께 로딩)를
+    // 조합한다. JPQL의 IN 절은 입력한 ID 리스트의 순서를 보존하지 않으므로, 1단계에서 받은
+    // 관련도순 순서대로 자바에서 다시 정렬한다.
+    private List<Issue> searchByKeywordOrderByRelevance(String keyword) {
+        List<Long> orderedIds = issueRepository.searchIdsByKeywordOrderByRelevance(keyword);
+        if (orderedIds.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, Issue> issuesById = issueRepository.findByIdInFetchAuthorAndWorkspace(orderedIds).stream()
+                .collect(Collectors.toMap(Issue::getId, issue -> issue));
+        return orderedIds.stream()
+                .map(issuesById::get)
                 .toList();
     }
 
