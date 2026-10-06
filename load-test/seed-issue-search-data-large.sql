@@ -13,6 +13,11 @@ DELETE FROM issue WHERE id BETWEEN 200001 AND 700000;
 
 -- 이슈 500,000개(id 200001~700000). 400개 중 1개꼴(n % 400 = 0, 총 1,250건)에만 이 대규모
 -- 테스트 전용 키워드를 심는다. 나머지 498,750건은 매칭되지 않는 일반 더미 본문.
+--
+-- 키워드는 제목 문자열("Search load issue (large) N")과 ngram 2글자 단위로 절대 안 겹치게
+-- 골라야 한다 - 이전에 'BOTTLENECKPROBELARGE'를 썼다가 끝부분 "LARGE"가 제목의 "(large)"와
+-- la/ar/rg/ge 2-gram을 공유해서, FULLTEXT 자연어 모드가 50만 건 거의 전부를 매칭시켜버리는
+-- 버그를 실측으로 발견했다. 'QZPLUMBUS'는 제목 문자열의 어떤 2글자 조합과도 겹치지 않는다.
 INSERT INTO issue (id, workspace_id, title, problem_description, solution, author_id, created_at, updated_at)
 SELECT
     200001 + n,
@@ -21,7 +26,7 @@ SELECT
     CASE
         WHEN n % 400 = 0 THEN CONCAT(
             REPEAT('이것은 대규모 부하테스트용 더미 설명입니다. ', 8),
-            'BOTTLENECKPROBELARGE',
+            'QZPLUMBUS',
             REPEAT(' 추가 더미 텍스트로 길이를 채웁니다.', 4))
         ELSE REPEAT('이것은 대규모 부하테스트용 더미 설명입니다. 실제 이슈 본문과 비슷한 길이를 흉내냅니다. ', 8)
     END,

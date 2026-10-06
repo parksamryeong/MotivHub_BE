@@ -44,11 +44,30 @@
   규모에서는 단일 요청만으로도 50초가 걸렸고, 동시 요청이 10개만 몰려도 전부 60초 타임아웃으로
   실패했다 — VU 10/20/30 사이에 유의미한 차이가 없었던 건 이미 요청 하나만으로도 완전히 망가진
   상태였기 때문이다.
-- **해결**: 아직 수정하지 않았다 — 이번 작업의 범위는 발견/측정까지였다(기존 부하테스트들과 동일한
-  "발견과 수정 분리" 패턴). 유력한 해결 방향은 MySQL FULLTEXT 인덱스(`ALTER TABLE issue ADD
-  FULLTEXT INDEX ... (title, problem_description, solution)`)로 전환해서 `LIKE` 대신 `MATCH() ...
-  AGAINST()`를 쓰는 것 — 역색인 구조라 풀스캔 자체가 필요 없어진다. 별도 브레인스토밍/계획으로
-  진행 예정.
+- **해결**: MySQL FULLTEXT 인덱스(`ALTER TABLE issue ADD FULLTEXT INDEX ft_issue_search (title,
+  problem_description, solution) WITH PARSER ngram`)로 전환해서 `LIKE` 대신 `MATCH() ...
+  AGAINST() IN NATURAL LANGUAGE MODE`를 쓰도록 고쳤다 — 역색인 구조라 풀스캔 자체가 필요 없어진다.
+  `ngram` 파서는 한국어 조사가 붙은 단어(예: "키워드가")도 검색어("키워드")로 찾아야 해서
+  필수였다(기본 FULLTEXT 파서는 공백 기준 단어 분리라 이 케이스를 못 찾음). JPQL이
+  `MATCH()/AGAINST()`를 표현 못 해서 네이티브 쿼리로 "관련도순 ID 목록"만 가져온 뒤, 기존과 같은
+  `JOIN FETCH` JPQL 쿼리로 author/workspace를 N+1 없이 한 번 더 가져오고 자바에서 재정렬하는
+  2단계 구조로 구현했다(`docs/superpowers/specs/2026-10-06-issue-search-fulltext-index-design.md`).
+  검색 결과 정렬이 최신순에서 관련도순(`MATCH() 점수 DESC`, 동점 시 `created_at DESC`)으로 바뀐다.
+- **결과(수정 전/후, 50만 건·버퍼풀 초과 규모로 동일 조건 재검증)**:
+
+  | 지표 | 수정 전 | 수정 후 | 개선 |
+  |---|---|---|---|
+  | 단일 요청(HTTP) | 50.58초 | 3.27초 | **약 15배** |
+  | 단일 요청(DB 쿼리만) | 측정 안 함(풀스캔 자체가 끝나지 않음) | 0.057초 | — |
+  | VU 10 (처리량/p95) | 100% 타임아웃(처리량 0) | **7.04 req/s, p95 512ms** | 타임아웃 → 정상 |
+  | VU 20 (처리량/p95) | 100% 타임아웃(처리량 0) | **13.57 req/s, p95 833ms** | 타임아웃 → 정상 |
+  | VU 30 (처리량/p95) | 100% 타임아웃(처리량 0) | **15.27 req/s, p95 1.14초** | 타임아웃 → 정상 |
+
+  VU 30에서 1분간 941개 요청 전부 성공(실패율 0%), 매칭 건수(1,250건)도 매 요청마다 정확했다.
+  재검증 중 테스트 데이터 자체의 버그도 하나 발견했다 — 검색 키워드(`BOTTLENECKPROBELARGE`)의
+  끝부분 "LARGE"가 시드 데이터의 이슈 제목("...issue (large) N")과 ngram 2글자 단위로 겹쳐서,
+  50만 건 거의 전부가 엉뚱하게 매칭되는 현상이 있었다(실제 검색 로직의 버그가 아니라 테스트
+  키워드 선정 실수). 겹치지 않는 키워드(`QZPLUMBUS`)로 교체해서 해결했다.
 
 ---
 
