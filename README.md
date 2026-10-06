@@ -6,10 +6,10 @@
 
 ## 주요 기능
 
-- **인증**: 소셜 로그인(구글/깃허브/카카오) + 이메일/비밀번호 로그인·회원가입(6자리 인증코드 방식), JWT 기반 멀티 디바이스 세션
+- **인증**: 소셜 로그인(구글/깃허브/카카오) + 이메일/비밀번호 로그인·회원가입(6자리 인증코드 방식), 비밀번호 재설정/변경, JWT 기반 멀티 디바이스 세션
 - **워크스페이스**: 팀 생성/초대/멤버 관리, 권한(소유자/멤버) 기반 접근 제어
 - **태스크 관리**: 상태·우선순위·기간 관리, 체크리스트, 댓글, 담당자·감시자 지정, 활동 로그
-- **실시간 공동 편집**: Yjs(CRDT) 기반 태스크 노트 동시 편집, WebSocket(STOMP)으로 보드 변경사항·접속자 현황(프레즌스) 실시간 동기화
+- **실시간 공동 편집**: Yjs(CRDT) 기반 태스크 노트 동시 편집(커서 위치 공유 포함), WebSocket(STOMP)으로 보드 변경사항·접속자 현황(프레즌스) 실시간 동기화
 - **알림**: 담당자 지정/댓글/마감 임박 등 이벤트 기반 알림, 대량 발송 시 병목을 피하기 위한 비동기 팬아웃 처리
 - **이슈 게시판**, **워크스페이스 파일 공유**(S3 호환 스토리지)
 - **부하테스트 기반 성능 최적화**: k6로 부하를 주며 Grafana/Prometheus로 실시간 관측, 실측 기반으로 병목을 찾아 개선
@@ -170,12 +170,32 @@ com.motivhub.be
 
 ### 1. 환경 변수 설정
 
-앱이 기동하려면 아래 환경 변수가 필요합니다. Spring Security가 기동 시점에 OAuth2 클라이언트 설정 값을 검증하므로, 로컬 개발에서는 실제 값이 아니어도 비어 있지 않은 임의의 문자열이면 됩니다.
+앱이 기동하려면 아래 환경 변수가 필요합니다. Spring Security가 기동 시점에 OAuth2 클라이언트 설정 값을 검증하므로, 로컬 개발에서는 실제 값이 아니어도 비어 있지 않은 임의의 문자열이면 됩니다. 이 프로젝트는 `.env` 파일을 쓰지 않습니다 — 아래처럼 OS/쉘 환경 변수로 직접 설정합니다.
 
 - `JWT_SECRET`: 32자 이상의 임의 문자열
 - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
 - `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`
 - `KAKAO_CLIENT_ID`, `KAKAO_CLIENT_SECRET`
+
+실행 명령 앞에 붙여서 한 번에 넘기면 됩니다(아래 "3. 애플리케이션 실행"의 `./gradlew bootRun`에 그대로 붙여 쓰는 방식):
+
+```bash
+# macOS/Linux/Git Bash
+JWT_SECRET=local-dev-secret-change-me-32bytes \
+GOOGLE_CLIENT_ID=dummy GOOGLE_CLIENT_SECRET=dummy \
+GITHUB_CLIENT_ID=dummy GITHUB_CLIENT_SECRET=dummy \
+KAKAO_CLIENT_ID=dummy KAKAO_CLIENT_SECRET=dummy \
+./gradlew bootRun
+```
+
+```powershell
+# Windows PowerShell — 변수를 먼저 세션에 설정한 뒤 실행
+$env:JWT_SECRET="local-dev-secret-change-me-32bytes"
+$env:GOOGLE_CLIENT_ID="dummy"; $env:GOOGLE_CLIENT_SECRET="dummy"
+$env:GITHUB_CLIENT_ID="dummy"; $env:GITHUB_CLIENT_SECRET="dummy"
+$env:KAKAO_CLIENT_ID="dummy"; $env:KAKAO_CLIENT_SECRET="dummy"
+./gradlew bootRun
+```
 
 ### 2. 인프라 컨테이너 기동
 
