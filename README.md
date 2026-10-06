@@ -56,8 +56,8 @@ flowchart LR
     Push["main에 push(머지)"] --> Test["test job<br/>./gradlew test"]
     Test -->|통과| Build["Docker 이미지 빌드<br/>:latest + 커밋 SHA 태그"]
     Build --> Hub["Docker Hub 푸시"]
-    Hub --> SSH["EC2 SSH 접속"]
-    SSH --> Restart["이미지 pull + 컨테이너 재시작"]
+    Hub --> SSM["AWS SSM으로 명령 전달"]
+    SSM --> Restart["이미지 pull + 컨테이너 재시작"]
     Restart --> Health["헬스체크 재시도<br/>(5초 간격, 최대 10회)"]
     Health -->|실패| Fail["워크플로우 실패<br/>— 수동 개입"]
     Health -->|성공| Done["배포 완료"]
@@ -66,6 +66,7 @@ flowchart LR
 - PR에서는 `test` job만 실행됩니다 — 배포는 main에 직접 push(=머지)될 때만 트리거됩니다.
 - 이미지 태그는 `:latest`와 커밋 SHA 둘 다 붙여서, 문제가 생기면 특정 커밋의 이미지로 수동 롤백할 수 있습니다.
 - 자동 롤백은 없습니다 — 헬스체크가 실패하면 워크플로우가 실패 상태로 끝나고 직접 확인합니다.
+- 배포는 SSH가 아니라 AWS SSM(Systems Manager)으로 명령을 전달합니다 — EC2에 상시 열린 포트가 없고, GitHub Actions는 OIDC로 단기 인증만 받습니다.
 - 워크플로우 정의: [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
 
 ## 프로젝트 구조
