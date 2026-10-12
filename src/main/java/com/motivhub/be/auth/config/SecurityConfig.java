@@ -28,7 +28,13 @@ public class SecurityConfig {
     private static final String[] PUBLIC_ENDPOINTS = {
             "/oauth2/**", "/login/**", "/api/auth/exchange", "/api/auth/refresh", "/api/auth/login",
             "/api/auth/signup/**", "/api/auth/password-reset/**", "/actuator/**", "/v3/api-docs/**",
-            "/swagger-ui/**", "/swagger-ui.html", "/ws/**"
+            "/swagger-ui/**", "/swagger-ui.html", "/ws/**",
+            // SockJS 장시간 스트리밍 연결이 중간에 끊기면 톰캣이 에러 페이지를 그리려고 /error로
+            // 재디스패치한다. 이 경로가 permitAll에 없으면 그 재디스패치 자체가 인증 안 된 요청으로
+            // 막혀 AuthorizationDeniedException이 터지고, 응답이 이미 일부 나간 상태라 복구도 못 하고
+            // 연결이 강제 종료된다 - 원래는 정상적으로 재연결됐어야 할 일시적 끊김이 영구적인 연결
+            // 실패로 바뀌는 원인이었다.
+            "/error"
     };
 
     private final List<String> allowedOrigins;

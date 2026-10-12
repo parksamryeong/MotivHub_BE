@@ -40,4 +40,20 @@ class SecurityConfigTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/swagger-ui/index.html"))
                 .andExpect(status().isOk());
     }
+
+    // 톰캣이 SockJS 스트리밍 연결 중 예외가 나면 에러 페이지를 그리려고 /error로 재디스패치한다.
+    // 이 경로가 permitAll이 아니면 인증 없는 재디스패치 자체가 거부되면서(AuthorizationDeniedException)
+    // 일시적 끊김이 복구 불가능한 연결 종료로 바뀐다 - /error가 401/403으로 막히지 않는지만 확인한다
+    // (실제 에러 응답 바디/상태 코드는 BasicErrorController의 몫이라 여기서는 검증하지 않는다).
+    @Test
+    void errorEndpointIsNotBlockedByAuthenticationWithoutToken() throws Exception {
+        mockMvc.perform(get("/error"))
+                .andExpect(result -> {
+                    int status = result.getResponse().getStatus();
+                    if (status == 401 || status == 403) {
+                        throw new AssertionError(
+                                "/error가 인증 필터에 막혔습니다 (status=" + status + ") - PUBLIC_ENDPOINTS 확인 필요");
+                    }
+                });
+    }
 }
