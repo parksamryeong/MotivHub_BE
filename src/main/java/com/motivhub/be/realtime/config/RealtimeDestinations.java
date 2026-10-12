@@ -11,6 +11,14 @@ public final class RealtimeDestinations {
         return "/topic/workspaces/" + workspaceId + "/tasks";
     }
 
+    public static String workspaceBoardCursorBroadcast(Long workspaceId) {
+        return "/topic/workspaces/" + workspaceId + "/board/cursors";
+    }
+
+    public static String taskCursorBroadcast(Long taskId) {
+        return "/topic/tasks/" + taskId + "/cursors";
+    }
+
     public static String taskEditBroadcast(Long taskId, TaskEditableField field) {
         return "/topic/tasks/" + taskId + "/" + field.pathSegment() + "/edits";
     }

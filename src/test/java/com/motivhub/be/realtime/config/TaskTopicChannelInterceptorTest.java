@@ -93,6 +93,21 @@ class TaskTopicChannelInterceptorTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void connectWithValidTokenAttachesNicknameAndProfileImageUrlToPrincipal() {
+        User user = newUser("connect-nickname");
+        String token = jwtProvider.generateAccessToken(user.getId());
+        Message<byte[]> message = connectMessage("Bearer " + token);
+
+        interceptor.preSend(message, null);
+
+        StompHeaderAccessor resultAccessor = StompHeaderAccessor.wrap(message);
+        StompPrincipal principal = (StompPrincipal) resultAccessor.getUser();
+        assertThat(principal).isNotNull();
+        assertThat(principal.getNickname()).isEqualTo(user.getNickname());
+        assertThat(principal.getProfileImageUrl()).isEqualTo(user.getProfileImageUrl());
+    }
+
+    @Test
     void connectWithMissingAuthorizationHeaderThrows() {
         assertThatThrownBy(() -> interceptor.preSend(connectMessage(null), null))
                 .isInstanceOf(StompAuthenticationException.class);
@@ -571,6 +586,119 @@ class TaskTopicChannelInterceptorTest extends AbstractIntegrationTest {
 
         Message<byte[]> message = sendMessage(
                 "/app/tasks/" + task.id() + "/description/awareness", owner.getId(), sessionId);
+
+        assertThatThrownBy(() -> interceptor.preSend(message, null))
+                .isInstanceOf(StompAuthenticationException.class);
+    }
+
+    @Test
+    void memberCanSubscribeToWorkspaceBoardCursorTopic() {
+        User owner = newUser("cur-board-sub-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "커서 보드 구독 워크스페이스");
+
+        Message<byte[]> message = subscribeMessage(
+                "/topic/workspaces/" + workspace.id() + "/board/cursors", owner.getId());
+
+        assertThatCode(() -> interceptor.preSend(message, null)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void nonMemberCannotSubscribeToWorkspaceBoardCursorTopic() {
+        User owner = newUser("cur-board-sub-owner2");
+        User outsider = newUser("cur-board-sub-outsider");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "커서 보드 구독 권한 워크스페이스");
+
+        Message<byte[]> message = subscribeMessage(
+                "/topic/workspaces/" + workspace.id() + "/board/cursors", outsider.getId());
+
+        assertThatThrownBy(() -> interceptor.preSend(message, null))
+                .isInstanceOf(NotWorkspaceMemberException.class);
+    }
+
+    @Test
+    void memberCanSubscribeToTaskCursorTopic() {
+        User owner = newUser("cur-task-sub-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "커서 태스크 구독 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("커서 태스크 구독 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        Message<byte[]> message = subscribeMessage("/topic/tasks/" + task.id() + "/cursors", owner.getId());
+
+        assertThatCode(() -> interceptor.preSend(message, null)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void nonMemberCannotSubscribeToTaskCursorTopic() {
+        User owner = newUser("cur-task-sub-owner2");
+        User outsider = newUser("cur-task-sub-outsider");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "커서 태스크 구독 권한 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("커서 태스크 구독 권한 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        Message<byte[]> message = subscribeMessage("/topic/tasks/" + task.id() + "/cursors", outsider.getId());
+
+        assertThatThrownBy(() -> interceptor.preSend(message, null))
+                .isInstanceOf(NotWorkspaceMemberException.class);
+    }
+
+    // 커서 SEND는 /edits·/awareness와 달리 선구독(editChannelRegistry) 요구가 없다 - 구독
+    // 없이도 멤버십만 있으면 바로 보낼 수 있어야 한다는 설계를 그대로 확인한다.
+    @Test
+    void memberCanSendToWorkspaceBoardCursorWithoutPriorSubscribe() {
+        User owner = newUser("cur-board-send-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "커서 보드 SEND 워크스페이스");
+
+        Message<byte[]> message = sendMessage(
+                "/app/workspaces/" + workspace.id() + "/board/cursor", owner.getId());
+
+        assertThatCode(() -> interceptor.preSend(message, null)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void nonMemberCannotSendToWorkspaceBoardCursor() {
+        User owner = newUser("cur-board-send-owner2");
+        User outsider = newUser("cur-board-send-outsider");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "커서 보드 SEND 권한 워크스페이스");
+
+        Message<byte[]> message = sendMessage(
+                "/app/workspaces/" + workspace.id() + "/board/cursor", outsider.getId());
+
+        assertThatThrownBy(() -> interceptor.preSend(message, null))
+                .isInstanceOf(NotWorkspaceMemberException.class);
+    }
+
+    @Test
+    void memberCanSendToTaskCursorWithoutPriorSubscribe() {
+        User owner = newUser("cur-task-send-owner");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "커서 태스크 SEND 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("커서 태스크 SEND 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        Message<byte[]> message = sendMessage("/app/tasks/" + task.id() + "/cursor", owner.getId());
+
+        assertThatCode(() -> interceptor.preSend(message, null)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void nonMemberCannotSendToTaskCursor() {
+        User owner = newUser("cur-task-send-owner2");
+        User outsider = newUser("cur-task-send-outsider");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "커서 태스크 SEND 권한 워크스페이스");
+        TaskResponse task = taskService.create(owner.getId(), workspace.id(),
+                new TaskCreateRequest("커서 태스크 SEND 권한 태스크", null, LocalDate.now(), LocalDate.now().plusDays(5), List.of()));
+
+        Message<byte[]> message = sendMessage("/app/tasks/" + task.id() + "/cursor", outsider.getId());
+
+        assertThatThrownBy(() -> interceptor.preSend(message, null))
+                .isInstanceOf(NotWorkspaceMemberException.class);
+    }
+
+    @Test
+    void unauthenticatedSendToWorkspaceBoardCursorThrows() {
+        User owner = newUser("cur-board-send-unauth");
+        WorkspaceResponse workspace = workspaceService.create(owner.getId(), "커서 보드 미인증 SEND 워크스페이스");
+
+        Message<byte[]> message = sendMessage("/app/workspaces/" + workspace.id() + "/board/cursor", null);
 
         assertThatThrownBy(() -> interceptor.preSend(message, null))
                 .isInstanceOf(StompAuthenticationException.class);
