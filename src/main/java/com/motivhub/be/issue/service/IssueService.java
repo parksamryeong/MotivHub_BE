@@ -71,6 +71,17 @@ public class IssueService {
                 .toList();
     }
 
+    public List<IssueResponse> listMine(Long userId, Long workspaceId, String keyword, String sort) {
+        String trimmedKeyword = (keyword == null || keyword.isBlank()) ? null : keyword.trim();
+        List<Issue> issues = "oldest".equalsIgnoreCase(sort)
+                ? issueRepository.findMineOrderByCreatedAtAsc(userId, workspaceId, trimmedKeyword)
+                : issueRepository.findMineOrderByCreatedAtDesc(userId, workspaceId, trimmedKeyword);
+        Map<Long, Long> commentCounts = commentCountByIssueId(issues.stream().map(Issue::getId).toList());
+        return issues.stream()
+                .map(issue -> IssueResponse.from(issue, commentCounts.getOrDefault(issue.getId(), 0L)))
+                .toList();
+    }
+
     public IssueResponse getDetail(Long issueId) {
         Issue issue = issueRepository.findByIdFetchAuthorAndWorkspace(issueId)
                 .orElseThrow(() -> new IssueNotFoundException("이슈를 찾을 수 없습니다."));

@@ -97,6 +97,73 @@ class IssueServiceTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void listMineReturnsOnlyOwnIssuesAcrossWorkspacesNewestFirst() {
+        User author = newUser("mine-author1");
+        User other = newUser("mine-other1");
+        WorkspaceResponse workspaceA = workspaceService.create(author.getId(), "내이슈 워크스페이스A");
+        WorkspaceResponse workspaceB = workspaceService.create(author.getId(), "내이슈 워크스페이스B");
+        joinAsMember(workspaceA.id(), other);
+        issueService.create(author.getId(), workspaceA.id(), "A의 첫 이슈", "설명", null);
+        issueService.create(author.getId(), workspaceB.id(), "B의 이슈", "설명", null);
+        issueService.create(other.getId(), workspaceA.id(), "다른 사람 이슈", "설명", null);
+
+        List<IssueResponse> results = issueService.listMine(author.getId(), null, null, null);
+
+        assertThat(results).extracting(IssueResponse::title).containsExactly("B의 이슈", "A의 첫 이슈");
+    }
+
+    @Test
+    void listMineFiltersByWorkspaceId() {
+        User author = newUser("mine-author2");
+        WorkspaceResponse workspaceA = workspaceService.create(author.getId(), "내이슈 필터 워크스페이스A");
+        WorkspaceResponse workspaceB = workspaceService.create(author.getId(), "내이슈 필터 워크스페이스B");
+        issueService.create(author.getId(), workspaceA.id(), "A 이슈", "설명", null);
+        issueService.create(author.getId(), workspaceB.id(), "B 이슈", "설명", null);
+
+        List<IssueResponse> results = issueService.listMine(author.getId(), workspaceA.id(), null, null);
+
+        assertThat(results).extracting(IssueResponse::title).containsExactly("A 이슈");
+    }
+
+    @Test
+    void listMineFiltersByKeywordAcrossTitleDescriptionAndSolution() {
+        User author = newUser("mine-author3");
+        WorkspaceResponse workspace = workspaceService.create(author.getId(), "내이슈 검색 워크스페이스");
+        issueService.create(author.getId(), workspace.id(), "검색어 포함 제목", "설명", null);
+        issueService.create(author.getId(), workspace.id(), "제목", "검색어 포함 설명", null);
+        issueService.create(author.getId(), workspace.id(), "제목", "설명", "검색어 포함 해결책");
+        issueService.create(author.getId(), workspace.id(), "무관한 제목", "무관한 설명", null);
+
+        List<IssueResponse> results = issueService.listMine(author.getId(), null, "검색어", null);
+
+        assertThat(results).hasSize(3);
+    }
+
+    @Test
+    void listMineSortOldestReturnsOldestFirst() {
+        User author = newUser("mine-author4");
+        WorkspaceResponse workspace = workspaceService.create(author.getId(), "내이슈 정렬 워크스페이스");
+        issueService.create(author.getId(), workspace.id(), "먼저 작성", "설명", null);
+        issueService.create(author.getId(), workspace.id(), "나중 작성", "설명", null);
+
+        List<IssueResponse> results = issueService.listMine(author.getId(), null, null, "oldest");
+
+        assertThat(results).extracting(IssueResponse::title).containsExactly("먼저 작성", "나중 작성");
+    }
+
+    @Test
+    void listMineExcludesIssuesInDeletedWorkspace() {
+        User author = newUser("mine-author5");
+        WorkspaceResponse workspace = workspaceService.create(author.getId(), "삭제될 내이슈 워크스페이스");
+        IssueResponse created = issueService.create(author.getId(), workspace.id(), "삭제될 이슈", "설명", null);
+
+        workspaceService.delete(author.getId(), workspace.id());
+
+        assertThat(issueService.listMine(author.getId(), null, null, null))
+                .extracting(IssueResponse::id).doesNotContain(created.id());
+    }
+
+    @Test
     void getDetailReturnsIssueFromAnyUserRegardlessOfWorkspaceMembership() {
         User author = newUser("detail-author1");
         User outsider = newUser("detail-outsider1");

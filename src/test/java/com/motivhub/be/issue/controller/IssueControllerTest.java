@@ -15,7 +15,11 @@ import com.motivhub.be.support.AbstractIntegrationTest;
 import com.motivhub.be.user.domain.SocialProvider;
 import com.motivhub.be.user.domain.User;
 import com.motivhub.be.user.repository.UserRepository;
+import com.motivhub.be.workspace.domain.Workspace;
+import com.motivhub.be.workspace.domain.WorkspaceMember;
+import com.motivhub.be.workspace.domain.WorkspaceRole;
 import com.motivhub.be.workspace.dto.WorkspaceResponse;
+import com.motivhub.be.workspace.repository.WorkspaceMemberRepository;
 import com.motivhub.be.workspace.service.WorkspaceService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,10 +36,16 @@ class IssueControllerTest extends AbstractIntegrationTest {
     @Autowired private JwtProvider jwtProvider;
     @Autowired private UserRepository userRepository;
     @Autowired private WorkspaceService workspaceService;
+    @Autowired private WorkspaceMemberRepository workspaceMemberRepository;
 
     private User newUser(String suffix) {
         return userRepository.save(User.create(
                 SocialProvider.GITHUB, "issue-ctrl-" + suffix, suffix + "@test.com", "user_" + suffix, null));
+    }
+
+    private void joinAsMember(Long workspaceId, User user) {
+        Workspace workspace = workspaceService.getWorkspace(workspaceId);
+        workspaceMemberRepository.save(WorkspaceMember.create(workspace, user, WorkspaceRole.MEMBER));
     }
 
     private String tokenFor(User user) {
@@ -61,6 +71,57 @@ class IssueControllerTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].title").value("제목"));
+    }
+
+    @Test
+    void listMineReturnsOnlyOwnIssues() throws Exception {
+        User author = newUser("mine-ctrl-author1");
+        User other = newUser("mine-ctrl-other1");
+        WorkspaceResponse workspace = workspaceService.create(author.getId(), "내이슈 API 워크스페이스1");
+        joinAsMember(workspace.id(), other);
+        mockMvc.perform(post("/api/issues")
+                        .header("Authorization", "Bearer " + tokenFor(author))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new IssueCreateRequest(workspace.id(), "내 이슈", "설명", null))))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/issues")
+                        .header("Authorization", "Bearer " + tokenFor(other))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new IssueCreateRequest(workspace.id(), "다른 사람 이슈", "설명", null))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/issues/mine")
+                        .header("Authorization", "Bearer " + tokenFor(author)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].title").value("내 이슈"));
+    }
+
+    @Test
+    void listMineFiltersByWorkspaceIdQueryParam() throws Exception {
+        User author = newUser("mine-ctrl-author2");
+        WorkspaceResponse workspaceA = workspaceService.create(author.getId(), "내이슈 API 워크스페이스A");
+        WorkspaceResponse workspaceB = workspaceService.create(author.getId(), "내이슈 API 워크스페이스B");
+        mockMvc.perform(post("/api/issues")
+                        .header("Authorization", "Bearer " + tokenFor(author))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new IssueCreateRequest(workspaceA.id(), "A 이슈", "설명", null))))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/issues")
+                        .header("Authorization", "Bearer " + tokenFor(author))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new IssueCreateRequest(workspaceB.id(), "B 이슈", "설명", null))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/issues/mine").queryParam("workspaceId", String.valueOf(workspaceA.id()))
+                        .header("Authorization", "Bearer " + tokenFor(author)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].title").value("A 이슈"));
     }
 
     @Test
