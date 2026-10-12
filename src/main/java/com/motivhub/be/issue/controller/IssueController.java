@@ -38,6 +38,15 @@ public class IssueController {
         return ResponseEntity.ok(issueService.list(q));
     }
 
+    @GetMapping("/api/issues/mine")
+    public ResponseEntity<List<IssueResponse>> listMine(
+            @AuthenticationPrincipal Long userId,
+            @RequestParam(required = false) Long workspaceId,
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false, defaultValue = "newest") String sort) {
+        return ResponseEntity.ok(issueService.listMine(userId, workspaceId, q, sort));
+    }
+
     @GetMapping("/api/issues/{id}")
     public ResponseEntity<IssueResponse> getDetail(@PathVariable Long id) {
         return ResponseEntity.ok(issueService.getDetail(id));

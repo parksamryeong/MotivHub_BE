@@ -32,4 +32,29 @@ public interface IssueRepository extends JpaRepository<Issue, Long> {
 
     @Query("SELECT i FROM Issue i JOIN FETCH i.author JOIN FETCH i.workspace WHERE i.id IN :ids")
     List<Issue> findByIdInFetchAuthorAndWorkspace(@Param("ids") List<Long> ids);
+
+    // "내가 작성한 이슈" 탭 전용 - author_id로 먼저 좁혀지는 조회라 전체 게시판과 달리 풀스캔
+    // 위험이 없으므로 FULLTEXT 대신 단순 LIKE로 충분하다. ASC/DESC를 JPQL 하나로 파라미터화할
+    // 수 없어 정렬 방향별로 메서드를 나눈다(이 레포의 다른 쿼리들과 같은 스타일).
+    @Query("SELECT i FROM Issue i JOIN FETCH i.author JOIN FETCH i.workspace w "
+            + "WHERE i.author.id = :authorId AND w.deletedAt IS NULL "
+            + "AND (:workspaceId IS NULL OR w.id = :workspaceId) "
+            + "AND (:keyword IS NULL OR LOWER(i.title) LIKE LOWER(CONCAT('%', :keyword, '%')) "
+            + "OR LOWER(i.problemDescription) LIKE LOWER(CONCAT('%', :keyword, '%')) "
+            + "OR LOWER(i.solution) LIKE LOWER(CONCAT('%', :keyword, '%'))) "
+            + "ORDER BY i.createdAt DESC, i.id DESC")
+    List<Issue> findMineOrderByCreatedAtDesc(
+            @Param("authorId") Long authorId, @Param("workspaceId") Long workspaceId,
+            @Param("keyword") String keyword);
+
+    @Query("SELECT i FROM Issue i JOIN FETCH i.author JOIN FETCH i.workspace w "
+            + "WHERE i.author.id = :authorId AND w.deletedAt IS NULL "
+            + "AND (:workspaceId IS NULL OR w.id = :workspaceId) "
+            + "AND (:keyword IS NULL OR LOWER(i.title) LIKE LOWER(CONCAT('%', :keyword, '%')) "
+            + "OR LOWER(i.problemDescription) LIKE LOWER(CONCAT('%', :keyword, '%')) "
+            + "OR LOWER(i.solution) LIKE LOWER(CONCAT('%', :keyword, '%'))) "
+            + "ORDER BY i.createdAt ASC, i.id ASC")
+    List<Issue> findMineOrderByCreatedAtAsc(
+            @Param("authorId") Long authorId, @Param("workspaceId") Long workspaceId,
+            @Param("keyword") String keyword);
 }
